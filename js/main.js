@@ -24,7 +24,7 @@ async function boot() {
   const sound = new Sound(CONFIG.audio.masterVolume);
   // BGM は 2 系統: 生成(music.js)と mp3(bgm.js)。メニューで SYNTH / TRACK / OFF を切り替える
   const track = new Bgm(CONFIG.bgm);
-  const synth = new Music({ volume: CONFIG.bgm.synthVolume });
+  const synth = new Music({ volume: CONFIG.bgm.synthVolume, tonic: CONFIG.bgm.tonic, bpm: CONFIG.bgm.bpm });
   const loadBgmMode = () => { try { return localStorage.getItem('numbermatch.bgmMode') ?? CONFIG.bgm.mode; } catch { return CONFIG.bgm.mode; } };
   const bgm = {
     mode: loadBgmMode(),
@@ -298,35 +298,53 @@ async function boot() {
     punch();
     if (ev.perfect) { setTimeout(() => sound.perfect(), 300); fx.flash('rgba(62,207,142,0.2)'); }
     vibrate([40, 60, 40, 60, 120]);
-    await sleep(700);
+    // Board を全部消した: ALL CLEAR の表示。Chain と FEVER は次の Stage へ続く
+    const cx = innerWidth / 2, cy = innerHeight * 0.42;
+    fx.floatText(cx, cy, 'ALL CLEAR', { color: PALETTE.amber, size: 42, dy: -30, life: 2.0 });
+    fx.floatText(cx, cy + 44, `+${fmt(ev.clearBonus + ev.perfectBonus + ev.savedBonus + ev.hintBonus)}${ev.perfect ? '  PERFECT' : ''}`, { color: ev.perfect ? PALETTE.green : PALETTE.white, size: 20, dy: -30, life: 2.0 });
+    if (ev.chain > 0) fx.floatText(cx, cy + 76, `CHAIN ×${ev.mult.toFixed(1)} を持ち越し`, { color: heatColor(game.heat), size: 14, dy: -24, life: 2.0 });
+    if (ev.lifeGain) { ui.renderLives(game.run.lives, CONFIG.lives.max, { gained: true }); sound.lifeGain(); }
+    ui.renderHud(game);
+    if (!ev.worldEnd && !ev.isLast) {
+      // 続けて次の Stage へ(Result の画面は World の終わりだけ)
+      await sleep(CONFIG.flow.autoNextMs);
+      busy = false;
+      handle(game.nextStage(Date.now()));
+      return;
+    }
+    await sleep(900);
     const card = ui.showOverlay(`
-      <div class="eyebrow">stage ${pad2(ev.stage)}</div>
-      <h1>${ev.perfect ? 'Perfect!' : 'Stage Clear'}</h1>
-      <div class="ja">${ev.perfect ? 'Add なしで Clear！！Heart が回復！' : ev.isLast ? '最後の Stage を突破！！' : 'ALL CLEAR!!'}</div>
+      <div class="eyebrow">${ev.isLast ? 'final stage' : `world ${game.worldOf(game.run.stageIndex) + 1} clear`} · stage ${pad2(ev.stage)}</div>
+      <h1>${ev.perfect ? 'Perfect!' : 'World Clear'}</h1>
+      <div class="ja">${ev.isLast ? '最後の Stage を突破！！' : `World ${game.worldOf(game.run.stageIndex) + 1} の 5 Stage を突破。`}</div>
       <div class="result">
         <div class="rank ${ev.rank}" id="ov-rank">${ev.rank}</div>
         <div class="stars"><span class="star">★</span><span class="star">★</span><span class="star">★</span></div>
       </div>
       <div class="rows">
-        <div class="row"><span class="k">Play Score</span><span class="v">${fmt(ev.playScore)}</span></div>
-        <div class="row"><span class="k">Clear Bonus</span><span class="v plus">+${fmt(ev.clearBonus)}</span></div>
+        <div class="row"><span class="k">この Stage の Play Score</span><span class="v">${fmt(ev.playScore)}</span></div>
+        <div class="row"><span class="k">ALL CLEAR Bonus</span><span class="v plus">+${fmt(ev.clearBonus)}</span></div>
         ${ev.perfect ? `<div class="row"><span class="k">Perfect Bonus</span><span class="v plus">+${fmt(ev.perfectBonus)}</span></div>` : ''}
         ${ev.savedBonus ? `<div class="row"><span class="k">Add 温存 Bonus(${ev.addsLeft} 回)</span><span class="v plus">+${fmt(ev.savedBonus)}</span></div>` : ''}
         ${ev.hintBonus ? `<div class="row"><span class="k">Hint 温存 Bonus(${ev.hintsLeft} 回)</span><span class="v plus">+${fmt(ev.hintBonus)}</span></div>` : ''}
         ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
-        <div class="row"><span class="k">Add の使用</span><span class="v">${ev.addsUsed} 回</span></div>
+        <div class="row"><span class="k">World の Rank</span><span class="v">${rankSummaryWorld(game.worldOf(game.run.stageIndex))}</span></div>
         <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
       </div>
       <div class="actions">
-        <button class="btn btn-primary" id="ov-next">${ev.isLast ? 'Result を見る' : 'Next Stage →'}</button>
+        <button class="btn btn-primary" id="ov-next">${ev.isLast ? 'Result を見る' : 'Next World →'}</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
       </div>`);
     ui.animateStars(card, ev.stars);
     setTimeout(() => { card.querySelector('#ov-rank')?.classList.add('show'); if (ev.rank === 'S') { sound.perfect(); fx.fireworks(4); } }, 1100);
-    if (ev.lifeGain) { ui.renderLives(game.run.lives, CONFIG.lives.max, { gained: true }); sound.lifeGain(); }
-    ui.renderHud(game);
-    card.querySelector('#ov-next').onclick = () => { busy = false; handle(game.nextStage()); };
+    card.querySelector('#ov-next').onclick = () => { busy = false; handle(game.nextStage(Date.now())); };
     card.querySelector('#ov-title').onclick = () => { busy = false; showTitle(); };
+  }
+
+  // World の 5 Stage の Rank を並べる
+  function rankSummaryWorld(w) {
+    const first = w * CONFIG.worldSize;
+    return `<span class="ranks">${stages.slice(first, first + CONFIG.worldSize).map((s) => { const r = game.progress.ranks[s.stage] ?? '·'; return `<span class="${r}">${r}</span>`; }).join('')}</span>`;
   }
 
   async function onStageFailed(ev) {
@@ -476,7 +494,7 @@ async function boot() {
         <b>Dead End</b>: 消せる Pair が無くなってもゲームは明示しない。Dead End になってから Add を押せば Chain は半分保持される。Dead End なのに Hint を押すと、使用回数 1 と Chain 半分、−${c.score.hintWhenStuck} 点。<br>
         <b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP になる。押すと Heart −1 だが、Stage 得点の半分は獲得できる。それに気づかず Hint を押すと Heart −1 で、Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。<br>
         <b>Heart</b>: 3 つ。尽きると Run は終わり、World のはじめから再開。<br>
-        <b>Clear</b>: Clear Bonus +${c.score.stageClear}。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}、残した Hint 1 回ごとに +${c.score.hintSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
+        <b>ALL CLEAR</b>: Board を全部消すと +${c.score.stageClear} が入り、Chain と FEVER はそのまま次の Stage へ続く。Result の画面は World(5 Stage)の終わりに出る。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}、残した Hint 1 回ごとに +${c.score.hintSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
         <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);

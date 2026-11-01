@@ -107,29 +107,32 @@ export class Game {
     return this.startStage();
   }
 
-  startStage() {
+  startStage(carry = null, now = Date.now()) {
     const def = this.stageDef;
     const attempt = this.progress.attempts[def.stage] ?? 0;
     const variant = def.boards[attempt % def.boards.length];
+    // carry があれば前の Stage の Chain・FEVER を持ち越す(Board を全部消して続けるとき)
+    const chain = carry ? carry.chain : 0;
+    const fever = carry && carry.fever ? { until: carry.fever.until } : null;
     this.run.stage = {
       board: variant.cells.slice(),
       addsLeft: def.adds,
       addsUsed: 0,
       hintsLeft: this.cfg.hint.perStage,
       hintsUsed: 0,
-      chain: 0,
+      chain,
       stageScore: 0,
       selected: null,
       hintPair: null,        // HINT で示した Pair(消すまで残る)
       flashUntil: null,      // FLASH の終わる時刻
       scope: null,           // SCOPE: { tile, misses }
-      lastRemoveAt: null,    // 前の消去の時刻(速さ Bonus と Chain ゲージ用)
+      lastRemoveAt: chain > 0 ? now : null,   // 前の消去の時刻(速さ Bonus と Chain ゲージ用)
       decayed: 0,            // 前の消去から Chain が減った回数
-      fever: null,           // FEVER 中なら { until }
+      fever,                 // FEVER 中なら { until }
       status: 'play',        // play | clear | failed | runOver | complete
     };
     this.save();
-    return [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex }];
+    return [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex, carried: !!carry }];
   }
 
   /** 中断から戻ったとき。離れていた時間で Chain が減ったり速さ Bonus が付いたりしないようにする。 */
@@ -404,7 +407,7 @@ export class Game {
     const bonusTotal = clearBonus + perfectBonus + savedBonus + hintBonus;
     this.run.score += bonusTotal;
     st.stageScore += bonusTotal;
-    st.fever = null; st.scope = null; st.flashUntil = null;
+    st.scope = null; st.flashUntil = null;     // FEVER と Chain は次の Stage へ持ち越す
     st.status = 'clear';
     const rank = this.rankFor(st.stageScore);
 
@@ -419,18 +422,21 @@ export class Game {
       stageScore: st.stageScore, playScore: st.stageScore - bonusTotal, score: this.run.score,
       addsUsed: st.addsUsed, addsLeft: st.addsLeft, hintsLeft: st.hintsLeft,
       isLast: this.run.stageIndex + 1 >= this.stages.length,
+      worldEnd: (this.run.stageIndex + 1) % this.cfg.worldSize === 0,   // World の終わりなら Result の画面
+      chain: st.chain, mult: this.multiplier, fever: !!st.fever,
     }];
   }
 
-  nextStage() {
+  nextStage(now = Date.now()) {
     if (!this.run || this.stage.status !== 'clear') return [];
     if (this.run.stageIndex + 1 >= this.stages.length) {
       this.stage.status = 'complete';
       this.save();
       return [{ type: 'complete', score: this.run.score, best: this.progress.bestScore }];
     }
+    const carry = { chain: this.stage.chain, fever: this.stage.fever };
     this.run.stageIndex += 1;
-    return this.startStage();
+    return this.startStage(carry, now);
   }
 
   /** 失敗。keepRatio は Stage 得点のうち残す割合(GIVE UP なら半分、気づかずの Hint なら 0)。 */
