@@ -4,7 +4,7 @@ const VERSION = 'ten-v3';
 const FILES = [
   './', './index.html', './manifest.json',
   './css/style.css',
-  './js/main.js', './js/game.js', './js/rules.js', './js/render.js', './js/fx.js', './js/audio.js', './js/bgm.js', './js/config.js',
+  './js/main.js', './js/game.js', './js/rules.js', './js/render.js', './js/fx.js', './js/audio.js', './js/bgm.js', './js/music.js', './js/config.js',
   './levels/stages.json',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
 ];
