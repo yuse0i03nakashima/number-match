@@ -1,0 +1,35 @@
+# GitHub Actions で web/ を Pages に配置する定義(予備)。
+# 使うには .github/workflows/pages.yml に移し、gh の認証に workflow スコープを足す:
+#   gh auth refresh -h github.com -s workflow
+# 通常は tools/deploy.ps1(gh-pages ブランチ方式)を使う。
+name: Deploy web/ to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths: ['web/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v4
