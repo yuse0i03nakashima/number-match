@@ -73,6 +73,23 @@ export class FX {
     this.burst(x, y, { color, count, power: 0.6, size: 2 });
   }
 
+  // 線に沿って火花を散らす(光の線の尾)
+  trail(x1, y1, x2, y2, color = PALETTE.blue, count = 14) {
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;                     // 線に直交する向き
+    const room = this.cfg.maxParticles - this.particles.length;
+    count = Math.max(0, Math.min(count, room));
+    for (let k = 0; k < count; k++) {
+      const u = (k + 0.5) / count, side = Math.random() < 0.5 ? -1 : 1;
+      const sp = 40 + Math.random() * 90;
+      this.particles.push({
+        x: x1 + dx * u, y: y1 + dy * u, vx: nx * side * sp + dx / len * 30, vy: ny * side * sp + dy / len * 30,
+        life: 0.35 + Math.random() * 0.3, age: 0, size: 1.5 + Math.random() * 1.5,
+        color, gravity: 200, drag: 0.92, shape: 'dot', spin: 0, rot: 0,
+      });
+    }
+  }
+
   // 2 点を結ぶ光の線(一瞬で消える)
   flashLine(x1, y1, x2, y2, color = PALETTE.blue, width = 3) {
     this.lines.push({ x1, y1, x2, y2, color, width, life: 0.35, age: 0 });

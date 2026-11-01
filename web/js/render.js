@@ -1,4 +1,4 @@
-// 画面の描き直し(DOM)。ボード面は <button class="cell"> の格子、HUD は数字と記号。
+// 画面の描き直し(DOM)。Board は <button class="cell"> の格子、HUD は数字と記号。
 // 「状態 → 見た目」の一方向だけ。入力の処理は main.js。
 
 import { WIDTH } from './rules.js';
@@ -28,13 +28,13 @@ export class Renderer {
     document.documentElement.style.setProperty('--glow', heat.toFixed(2));
   }
 
-  // スコア表示の中心座標(得点が飛んでいく先)
+  // Score 表示の中心座標(得点が飛んでいく先)
   scoreCenter() {
     const r = this.$('hud-score').getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
 
-  // ボード面全体を作り直す。selected / hintPair の見た目もここで付ける。
+  // Board 全体を作り直す。selected / hintPair の見た目もここで付ける。
   renderBoard(board, { selected = null, hintPair = null, addedFrom = null } = {}) {
     const frag = document.createDocumentFragment();
     board.forEach((c, p) => {
@@ -73,6 +73,14 @@ export class Renderer {
     return { y: r.top, h: r.height };
   }
 
+  // 選んだマスを伸び縮みさせる(squash & stretch)
+  selectCell(pos) {
+    const el = this.cellEl(pos);
+    if (!el) return;
+    el.classList.remove('selected', 'squash'); void el.offsetWidth;
+    el.classList.add('selected', 'squash');
+  }
+
   // 消えるマスにクラスを付ける(アニメ後に renderBoard で作り直す)
   markRemoving(i, j) {
     for (const p of [i, j]) this.cellEl(p)?.classList.add('removing');
@@ -88,7 +96,7 @@ export class Renderer {
     el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
   }
 
-  renderHud(game) {
+  renderHud(game, now = Date.now()) {
     const run = game.run, st = game.stage, def = game.stageDef;
     if (!run || !st || !def) return;
     this.$('hud-stage-label').textContent = `STAGE ${String(def.stage).padStart(2, '0')}`;
@@ -97,9 +105,26 @@ export class Renderer {
     this.$('hud-mult').textContent = `×${game.multiplier.toFixed(1)}`;
     this.$('hud-chain-fill').style.width = `${Math.round(game.heat * 100)}%`;
     this.setHeat(game.heat);
+    this.renderGauge(game, now);
+    this.renderFever(game, now);
     this.renderLives(run.lives, game.cfg.lives.max);
-    this.renderStock(st.addsLeft, def.adds);
-    this.$('btn-add').disabled = st.addsLeft <= 0;
+    this.renderAddButton(st.addsLeft, def.adds);
+  }
+
+  // Chain ゲージ(時間で減る)。満タンから空になるまでの残り
+  renderGauge(game, now) {
+    const ratio = game.gaugeRatio(now);
+    const fill = this.$('hud-gauge-fill');
+    fill.style.width = `${Math.round(ratio * 100)}%`;
+    fill.classList.toggle('low', ratio > 0 && ratio < 0.35 && !game.inFever);
+  }
+
+  renderFever(game, now) {
+    const box = this.$('hud-fever');
+    const on = game.inFever;
+    box.hidden = !on;
+    document.body.classList.toggle('fever', on);
+    if (on) this.$('hud-fever-fill').style.width = `${Math.round(game.feverRatio(now) * 100)}%`;
   }
 
   renderLives(lives, max, { lost = false, gained = false } = {}) {
@@ -115,18 +140,29 @@ export class Renderer {
     box.innerHTML = hearts.join('');
   }
 
-  renderStock(left, total) {
-    const dots = [];
-    for (let k = 0; k < total; k++) dots.push(`<span class="dot${k < left ? '' : ' off'}"></span>`);
-    this.$('add-stock').innerHTML = `<span class="stock">${dots.join('')}</span>`;
+  // ADD ボタン。Add が尽きたら GIVE UP に変わる
+  renderAddButton(left, total) {
+    const btn = this.$('btn-add');
+    const label = this.$('btn-add-label');
+    const sub = this.$('add-stock');
+    if (left <= 0) {
+      btn.classList.remove('ctl-primary'); btn.classList.add('ctl-danger');
+      label.textContent = 'GIVE UP';
+      sub.textContent = 'Heart −1 · 得点は半分残る';
+    } else {
+      btn.classList.add('ctl-primary'); btn.classList.remove('ctl-danger');
+      label.textContent = '＋ ADD';
+      const dots = [];
+      for (let k = 0; k < total; k++) dots.push(`<span class="dot${k < left ? '' : ' off'}"></span>`);
+      sub.innerHTML = `<span class="stock">${dots.join('')}</span>`;
+    }
+    btn.disabled = false;
   }
 
   bumpScore() {
     const el = this.$('hud-score');
     el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
   }
-
-  urgeAdd(on) { this.$('btn-add').classList.toggle('urge', on); }
 
   toast(text, ms = 1800) {
     const el = this.$('toast');
@@ -144,7 +180,7 @@ export class Renderer {
   }
   hideOverlay() { this.$('overlay').hidden = true; }
 
-  // 星を順番に出す
+  // Star を順番に出す
   animateStars(card, count) {
     const stars = card.querySelectorAll('.star');
     stars.forEach((s, k) => {
