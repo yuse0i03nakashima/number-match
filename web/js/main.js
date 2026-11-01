@@ -182,8 +182,8 @@ async function boot() {
     await sleep(900);
     const card = ui.showOverlay(`
       <div class="eyebrow">stage ${String(ev.stage).padStart(2, '0')}</div>
-      <h1>Stuck</h1>
-      <div class="ja">消せる組がなく、追加も残っていない。ハートを 1 つ失った。</div>
+      <h1>${ev.reason === 'giveUp' ? 'Give Up' : 'Stuck'}</h1>
+      <div class="ja">${ev.reason === 'giveUp' ? 'ステージをあきらめた。' : '消せる組がなく、追加も残っていない。'}ハートを 1 つ失った。</div>
       <div class="rows">
         <div class="row"><span class="k">失ったステージ得点</span><span class="v minus">−${fmt(ev.lost)}</span></div>
         <div class="row"><span class="k">残りハート</span><span class="v">${'♥'.repeat(ev.lives)}${'♡'.repeat(CONFIG.lives.max - ev.lives)}</span></div>
