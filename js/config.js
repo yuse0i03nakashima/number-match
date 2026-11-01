@@ -70,8 +70,9 @@ export const CONFIG = {
     hitStopMs: 90,         // 行が消えた瞬間に粒子を止める時間(ヒットストップ)
   },
   bgm: {
-    volume: 0.28,                    // BGM の音量(効果音より少し小さく)
-    tracks: { normal: 'bgm/normal.mp3', fever: 'bgm/fever.mp3' },   // 通常曲と FEVER 曲
+    volume: 0.22,                    // BGM の音量(効果音より少し小さく。出口のコンプレッサーで割れを防ぐ)
+    tracks: { normal: 'bgm/normal.mp3', fever: 'bgm/fever.mp3' },   // 通常曲と FEVER 曲(同時に鳴らし、音量だけで切り替える)
+    trims: { normal: 1.0, fever: 0.9 },   // 曲ごとの音量合わせ
   },
   audio: {
     masterVolume: 0.35,

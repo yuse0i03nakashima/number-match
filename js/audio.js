@@ -40,8 +40,12 @@ export class Sound {
     const delay = this.ctx.createDelay(0.5); delay.delayTime.value = 0.16;
     const fb = this.ctx.createGain(); fb.gain.value = 0.22;
     const wet = this.ctx.createGain(); wet.gain.value = 0.25;
-    this.master.connect(this.ctx.destination);
-    this.master.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(this.ctx.destination);
+    // 出口のコンプレッサー(音が重なっても割れないように)
+    const comp = this.ctx.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 6; comp.attack.value = 0.003; comp.release.value = 0.2;
+    comp.connect(this.ctx.destination);
+    this.master.connect(comp);
+    this.master.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(comp);
     return true;
   }
 
