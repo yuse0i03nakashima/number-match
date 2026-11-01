@@ -8,3 +8,5 @@ Thumbs.db
 .vscode/
 # scratch
 _work/
+# yomiyasu の検査記録
+.yomiyasu/
