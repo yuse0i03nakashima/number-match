@@ -113,7 +113,7 @@ async function boot() {
           sound.add(); vibrate(25);
           redraw({ addedFrom: ev.oldLength });
           if (ev.stuckBefore && ev.chainBefore > 0) {
-            ui.toast(`詰みからの Add: Chain は半分残る ×${ev.multBefore.toFixed(1)} → ×${ev.multAfter.toFixed(1)}`, 2200);
+            ui.toast(`Dead End からの Add: Chain は半分残る ×${ev.multBefore.toFixed(1)} → ×${ev.multAfter.toFixed(1)}`, 2200);
           } else if (ev.chainBefore > 0) {
             ui.toast('まだ Pair があった… Chain が途切れた ×1.0', 2200);
           }
@@ -409,7 +409,7 @@ async function boot() {
         <b>Line</b>: 1 行まるごと空になるとその行が Board から消え、${c.score.rowClear} 点 × 行数の 2 乗 × 倍率。<br>
         <b>Add</b>: Board に残っている数字を、読む順番のまま末尾に書き足す。使える回数は Stage ごとに決まっている。<br>
         <b>Hint</b>: 消せる Pair を 1 つ光らせる。Chain は途切れる。<br>
-        <b>詰み</b>: 消せる Pair が無くなってもゲームは教えない。詰んでから Add を押せば Chain は半分残る。詰んでいるのに Hint を押すと、途切れたうえに −${c.score.hintWhenStuck} 点。<br>
+        <b>Dead End</b>: 消せる Pair が無くなってもゲームは教えない。Dead End になってから Add を押せば Chain は半分残る。Dead End なのに Hint を押すと、途切れたうえに −${c.score.hintWhenStuck} 点。<br>
         <b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP になる。押すと Heart −1 だが、Stage 得点の半分は残る。それに気づかず Hint を押すと Heart −1、Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。<br>
         <b>Heart</b>: 3 つ。尽きると Run は終わり、World のはじめから再開。<br>
         <b>Clear</b>: Clear Bonus +${c.score.stageClear}。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
