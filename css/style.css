@@ -306,3 +306,9 @@ body.fever .hud, body.fever .controls { border-color:rgba(240,98,146,0.5); }
 @media (min-height:760px) {
   .score { font-size:30px; }
 }
+
+/* BGM の拍に合わせた脈動(JS が --beat を 0〜1 で毎フレーム更新) */
+:root { --beat:0; }
+.board-wrap { box-shadow:inset 0 0 calc(10px + var(--glow) * 70px + var(--beat) * 40px) color-mix(in srgb, var(--heat) calc(var(--glow) * 45% + var(--beat) * 20%), transparent); }
+body::after { opacity:calc(0.15 + var(--glow) * 0.2 + var(--beat) * 0.15); transition:none; }
+.hud .score { text-shadow:0 0 calc(var(--beat) * 14px) color-mix(in srgb, var(--heat) 70%, transparent); }

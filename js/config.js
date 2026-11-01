@@ -69,6 +69,10 @@ export const CONFIG = {
     maxParticles: 900,
     hitStopMs: 90,         // 行が消えた瞬間に粒子を止める時間(ヒットストップ)
   },
+  bgm: {
+    volume: 0.28,                    // BGM の音量(効果音より少し小さく)
+    tracks: { normal: 'bgm/normal.mp3', fever: 'bgm/fever.mp3' },   // 通常曲と FEVER 曲
+  },
   audio: {
     masterVolume: 0.35,
   },

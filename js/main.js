@@ -7,6 +7,7 @@ import { Game } from './game.js';
 import { Renderer } from './render.js';
 import { FX, heatColor, PALETTE } from './fx.js';
 import { Sound, vibrate } from './audio.js';
+import { Bgm } from './bgm.js';
 import { WIDTH, validPairs } from './rules.js';
 
 const fmt = (n) => n.toLocaleString('en-US');
@@ -20,6 +21,11 @@ async function boot() {
   const ui = new Renderer(document);
   const fx = new FX(document.getElementById('fx'), CONFIG.fx);
   const sound = new Sound(CONFIG.audio.masterVolume);
+  const bgm = new Bgm(CONFIG.bgm);
+  // 最初のタップで AudioContext ができたら BGM をつなぐ(ensure は何度呼んでもよい)
+  const ensureAudio = () => { if (sound.ensure()) bgm.attach(sound.ctx); };
+  // 拍に合わせて背景を脈打たせる
+  (function beat() { document.documentElement.style.setProperty('--beat', bgm.level().toFixed(2)); requestAnimationFrame(beat); })();
   const app = document.getElementById('app');
   let busy = false;   // 消去アニメ中の多重入力を防ぐ
   let lineStreak = 0; // 連続で行を消した回数(行が消えない手・Add・Hint・Stage 開始で 0 に戻る)
@@ -45,12 +51,17 @@ async function boot() {
   // ---------- 時間 ----------
   // Chain ゲージと FEVER は時間で動くので、定期的に進めて HUD を描き直す
   setInterval(() => {
+    // BGM: Stage 中は Chain の熱と FEVER に合わせ、Title では止める。オーバーレイ中は小さく
+    if (game.stage?.status === 'play' || game.stage?.status === 'clear') { bgm.setHeat(game.heat); bgm.setFever(game.inFever); bgm.play('normal'); }
+    else if (titleShown) bgm.stop();
+    bgm.duck(overlayOpen());
     if (!game.stage || game.stage.status !== 'play' || overlayOpen()) return;
     const now = Date.now();
     const events = game.tick(now);
     if (events.length) handle(events);
     else ui.renderHud(game, now);
   }, 200);
+  let titleShown = false;
 
   // ---------- イベントの振り分け ----------
   async function handle(events) {
@@ -157,7 +168,7 @@ async function boot() {
           break;
         }
         case 'stageStart': {
-          lineStreak = 0;
+          lineStreak = 0; titleShown = false;
           ui.hideOverlay();
           redraw();
           ui.boardWrap.scrollTo({ top: 0 });
@@ -376,7 +387,7 @@ async function boot() {
 
   // ---------- Title・Menu ----------
   function showTitle() {
-    busy = false;
+    busy = false; titleShown = true;
     const canResume = game.run && game.stage && (game.stage.status === 'play' || game.stage.status === 'clear' || game.stage.status === 'failed');
     const worlds = [];
     const total = Math.ceil(stages.length / CONFIG.worldSize);
@@ -405,16 +416,16 @@ async function boot() {
       </div>
       <div class="meta">rules verified</div>`);
     card.querySelector('#ov-resume')?.addEventListener('click', () => {
-      sound.ensure();
+      ensureAudio();
       const st = game.stage;
       if (st.status === 'clear') { ui.hideOverlay(); redraw(); handle(game.nextStage()); return; }
       if (st.status === 'failed') { handle(game.retryStage()); return; }
       game.resume(Date.now());
       ui.hideOverlay(); redraw();
     });
-    card.querySelector('#ov-new').onclick = () => { sound.ensure(); handle(game.newRun(0)); };
+    card.querySelector('#ov-new').onclick = () => { ensureAudio(); handle(game.newRun(0)); };
     card.querySelectorAll('[data-world]').forEach((b) => b.addEventListener('click', () => {
-      sound.ensure(); handle(game.newRun(Number(b.dataset.world) * CONFIG.worldSize));
+      ensureAudio(); handle(game.newRun(Number(b.dataset.world) * CONFIG.worldSize));
     }));
     card.querySelector('#ov-rules').onclick = showRules;
   }
@@ -458,12 +469,14 @@ async function boot() {
       <div class="actions">
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
+        <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
         ${inPlay ? '<button class="btn btn-danger" id="ov-giveup">GIVE UP(Heart −1 · 得点は半分残る)</button>' : ''}
       </div>`);
     card.querySelector('#ov-back').onclick = () => { game.resume(Date.now()); ui.hideOverlay(); };
     card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showMenu(); };
+    card.querySelector('#ov-bgm').onclick = () => { bgm.setEnabled(!bgm.enabled); showMenu(); };
     card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showMenu; };
     card.querySelector('#ov-title').onclick = showTitle;
     card.querySelector('#ov-giveup')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.giveUp()); });
@@ -473,11 +486,11 @@ async function boot() {
   ui.board.addEventListener('pointerdown', (e) => {
     const el = e.target.closest('.cell');
     if (!el || busy || overlayOpen()) return;
-    sound.ensure();
+    ensureAudio();
     handle(game.tap(Number(el.dataset.pos), Date.now()));
   });
-  document.getElementById('btn-add').onclick = () => { if (!busy && !overlayOpen()) { sound.ensure(); handle(game.useAdd(Date.now())); } };
-  document.getElementById('btn-hint').onclick = () => { if (!busy && !overlayOpen()) { sound.ensure(); handle(game.useHint()); } };
+  document.getElementById('btn-add').onclick = () => { if (!busy && !overlayOpen()) { ensureAudio(); handle(game.useAdd(Date.now())); } };
+  document.getElementById('btn-hint').onclick = () => { if (!busy && !overlayOpen()) { ensureAudio(); handle(game.useHint()); } };
   document.getElementById('btn-menu').onclick = showMenu;
   soundLabel();
 
