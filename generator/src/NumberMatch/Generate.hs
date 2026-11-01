@@ -40,12 +40,12 @@ data StageSpec = StageSpec
   , specAdds  :: Int   -- ^ 「数字を追加」の回数
   } deriving (Show)
 
--- | ステージ番号 → 設定。ワールド(5 ステージ)ごとに難しくする。
---   26 = 2 行 + 8 個(本家の 27 個に近く、かつ偶数)。
+-- | ステージ番号 → 設定。ステージが進むごとにマス数を 2 ずつ増やす(偶数を保つ)。
+--   ステージ 1 は 26 個(2 行 + 8 個。本家の 27 個に近い)、ステージ 30 は 84 個(9 行 + 3 個)。
+--   「数字を追加」の回数は、ステージ 10 までは 3 回、それ以降は 2 回。
 stageSpec :: Int -> StageSpec
-stageSpec n
-  | n <= 5    = StageSpec n 26 3
-  | n <= 10   = StageSpec n 36 3
-  | n <= 15   = StageSpec n 36 2
-  | n <= 20   = StageSpec n 44 2
-  | otherwise = StageSpec n 54 2
+stageSpec n = StageSpec n cells adds
+  where
+    cells = 24 + 2 * n
+    adds | n <= 10   = 3
+         | otherwise = 2

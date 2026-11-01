@@ -21,7 +21,7 @@ Haskell 側は `generator/` で実行します。
 ```powershell
 cabal build        # ビルド
 cabal test         # ルールとソルバの検査(22 件)
-cabal run gen      # web/levels/stages.json と web/test/vectors.json を書き出す(約 15 秒)
+cabal run gen      # web/levels/stages.json と web/test/vectors.json を書き出す(約 25 秒)
 ```
 
 ブラウザ側はリポジトリのルートで実行します。
