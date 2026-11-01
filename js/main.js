@@ -8,6 +8,7 @@ import { Renderer } from './render.js';
 import { FX, heatColor, PALETTE } from './fx.js';
 import { Sound, vibrate } from './audio.js';
 import { Bgm } from './bgm.js';
+import { Music } from './music.js';
 import { WIDTH, validPairs } from './rules.js';
 
 const fmt = (n) => n.toLocaleString('en-US');
@@ -21,7 +22,28 @@ async function boot() {
   const ui = new Renderer(document);
   const fx = new FX(document.getElementById('fx'), CONFIG.fx);
   const sound = new Sound(CONFIG.audio.masterVolume);
-  const bgm = new Bgm(CONFIG.bgm);
+  // BGM は 2 系統: 生成(music.js)と mp3(bgm.js)。メニューで SYNTH / TRACK / OFF を切り替える
+  const track = new Bgm(CONFIG.bgm);
+  const synth = new Music({ volume: CONFIG.bgm.synthVolume });
+  const loadBgmMode = () => { try { return localStorage.getItem('numbermatch.bgmMode') ?? CONFIG.bgm.mode; } catch { return CONFIG.bgm.mode; } };
+  const bgm = {
+    mode: loadBgmMode(),
+    get active() { return this.mode === 'synth' ? synth : this.mode === 'track' ? track : null; },
+    attach(ctx) { track.attach(ctx); synth.attach(ctx); },
+    play() { this.active?.play(); },
+    stop() { synth.stop(); track.stop(); },
+    setHeat(h) { synth.setHeat(h); track.setHeat(h); },
+    setFever(on) { synth.setFever(on); track.setFever(on); },
+    duck(on) { synth.duck(on); track.duck(on); },
+    level() { return this.active ? this.active.level() : 0; },
+    cycle() {
+      const order = ['synth', 'track', 'off'];
+      this.mode = order[(order.indexOf(this.mode) + 1) % order.length];
+      try { localStorage.setItem('numbermatch.bgmMode', this.mode); } catch { /* 無視 */ }
+      this.stop();
+    },
+    get label() { return this.mode === 'synth' ? 'SYNTH' : this.mode === 'track' ? 'TRACK' : 'OFF'; },
+  };
   // 最初のタップで AudioContext ができたら BGM をつなぐ(ensure は何度呼んでもよい)
   const ensureAudio = () => { if (sound.ensure()) bgm.attach(sound.ctx); };
   // 拍に合わせて背景を脈打たせる
@@ -469,14 +491,14 @@ async function boot() {
       <div class="actions">
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
-        <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.enabled ? 'ON' : 'OFF'}</button>
+        <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
         ${inPlay ? '<button class="btn btn-danger" id="ov-giveup">GIVE UP(Heart −1 · 得点は半分残る)</button>' : ''}
       </div>`);
     card.querySelector('#ov-back').onclick = () => { game.resume(Date.now()); ui.hideOverlay(); };
     card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showMenu(); };
-    card.querySelector('#ov-bgm').onclick = () => { bgm.setEnabled(!bgm.enabled); showMenu(); };
+    card.querySelector('#ov-bgm').onclick = () => { bgm.cycle(); showMenu(); };
     card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showMenu; };
     card.querySelector('#ov-title').onclick = showTitle;
     card.querySelector('#ov-giveup')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.giveUp()); });
