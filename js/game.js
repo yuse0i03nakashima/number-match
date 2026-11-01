@@ -1,5 +1,5 @@
 // ゲームの進行(ルールの上に乗る層)。
-//   rules.js  … 盤面の純粋な操作(Haskell と同じ)
+//   rules.js  … ボード面の純粋な操作(Haskell と同じ)
 //   game.js   … ラン・ステージ・チェーン・ライフ・スコア・保存   ← このファイル
 //   main.js   … 画面・演出・音とのつなぎ
 //
@@ -126,7 +126,7 @@ export class Game {
     return events;
   }
 
-  // 盤が変わった後の判定: クリア / 詰み(追加できる) / 詰み(追加できない = 失敗)
+  // ボードが変わった後の判定: クリア / 詰み(追加できる) / 詰み(追加できない = 失敗)
   afterBoardChange() {
     const st = this.stage;
     if (isCleared(st.board)) return this.stageClear();

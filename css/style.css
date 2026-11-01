@@ -110,7 +110,7 @@ body::after {
   box-shadow:0 0 8px var(--heat);
 }
 
-/* ---------- 盤面 ---------- */
+/* ---------- ボード面 ---------- */
 .board-wrap {
   flex:1; min-height:0;
   display:flex; justify-content:center; align-items:flex-start;

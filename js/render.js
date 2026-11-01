@@ -1,4 +1,4 @@
-// 画面の描き直し(DOM)。盤面は <button class="cell"> の格子、HUD は数字と記号。
+// 画面の描き直し(DOM)。ボード面は <button class="cell"> の格子、HUD は数字と記号。
 // 「状態 → 見た目」の一方向だけ。入力の処理は main.js。
 
 import { WIDTH } from './rules.js';
@@ -27,7 +27,7 @@ export class Renderer {
     document.documentElement.style.setProperty('--heat', heatColor(heat));
   }
 
-  // 盤面全体を作り直す。selected / hintPair の見た目もここで付ける。
+  // ボード面全体を作り直す。selected / hintPair の見た目もここで付ける。
   renderBoard(board, { selected = null, hintPair = null, addedFrom = null } = {}) {
     const frag = document.createDocumentFragment();
     board.forEach((c, p) => {

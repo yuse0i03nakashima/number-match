@@ -18,7 +18,7 @@ function memoryStorage() {
   return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, v), removeItem: (k) => m.delete(k) };
 }
 
-test('stages.json: 30 ステージ、各 3 盤、マス数は偶数、par 0', () => {
+test('stages.json: 30 ステージ、各 3 ボード、マス数は偶数、par 0', () => {
   assert.equal(stages.length, 30);
   for (const s of stages) {
     assert.equal(s.boards.length, 3, `stage ${s.stage}`);
@@ -58,7 +58,7 @@ test('組にならない 2 つ: invalid と選択の移動', () => {
   assert.equal(g.stage.selected, p + 1);
 });
 
-test('追加: 盤が伸び、チェーンが切れ、残り回数が減る', () => {
+test('追加: ボードが伸び、チェーンが切れ、残り回数が減る', () => {
   const g = new Game(stages, CONFIG, memoryStorage());
   g.newRun(0);
   const [i, j] = validPairs(g.stage.board)[0];
@@ -74,7 +74,7 @@ test('追加: 盤が伸び、チェーンが切れ、残り回数が減る', () 
   assert.equal(g.stage.addsUsed, 1);
 });
 
-test('ヒント: 消せる組を 1 つ返し、チェーンが切れる', () => {
+test('ヒント: 消せるペアを 1 つ返し、チェーンが切れる', () => {
   const g = new Game(stages, CONFIG, memoryStorage());
   g.newRun(0);
   const evs = g.useHint();
@@ -119,7 +119,7 @@ test('あきらめる → ハート減少 → 3 回でラン終了、再開地�
   const e3 = g.giveUp();
   assert.equal(e3[0].type, 'runOver');
   assert.equal(e3[0].resumeStage, 5);
-  // 失敗のたびに別の盤(variant)が出る
+  // 失敗のたびに別のボード(variant)が出る
   assert.equal(g.progress.attempts[7], 3);
 });
 
@@ -138,7 +138,7 @@ test('パーフェクトクリアでハート回復・星 3', () => {
   const g = new Game(stages, CONFIG, memoryStorage());
   g.newRun(0);
   g.run.lives = 1;
-  // 盤を「あと 1 組」の状態に差し替えて確実にクリアさせる
+  // ボードを「あと 1 組」の状態に差し替えて確実にクリアさせる
   g.stage.board = [5, 5];
   const evs = g.tap(0).concat(g.tap(1));
   const clear = evs.find((e) => e.type === 'stageClear');
