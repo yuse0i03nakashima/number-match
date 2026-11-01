@@ -44,7 +44,7 @@ connected b i j = any ok [1, width, width + 1, width - 1]
       (j - i) `mod` step == 0
         && all (\p -> cellAt b p == Empty) [i + step, i + 2 * step .. j - step]
 
--- | いま消せる組の一覧(i < j)。
+-- | いま消せるペアの一覧(i < j)。
 --   (第4章 リスト内包表記: 2 重の生成器とガード)
 validPairs :: Board -> [(Pos, Pos)]
 validPairs b =

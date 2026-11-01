@@ -14,7 +14,7 @@ import NumberMatch.Json
 -- | 作るステージ数と、1 回の探索に許すノード数。
 stageCount, budget :: Int
 stageCount = 30
-budget     = 4000   -- 小さめ: 探索がすぐ見つける盤 = 人にも筋道が見つけやすい盤
+budget     = 4000   -- 小さめ: 探索がすぐ見つけるボード = 人にも筋道が見つけやすいボード
 
 -- | ステージ 1 面ぶんの結果。
 data Stage = Stage
@@ -22,11 +22,11 @@ data Stage = Stage
   , stSeed  :: Seed
   , stBoard :: Board
   , stPar   :: Int
-  , stMoves :: Int        -- ^ 初手で消せる組の数(難しさの目安)
+  , stMoves :: Int        -- ^ 初手で消せるペアの数(難しさの目安)
   , stSolution :: [Move]
   }
 
--- | シードを順に試し、追加なしで全消しできる盤を見つける。
+-- | シードを順に試し、追加なしで全消しできるボードを見つける。
 --   parityOk で先に弾くと、探索しなくてよいシードが大半になる。
 findStage :: StageSpec -> Seed -> Stage
 findStage spec seed
@@ -36,12 +36,12 @@ findStage spec seed
   where
     b     = randomBoard seed (specCells spec)
     moves = length (validPairs b)
-    -- 序盤は初手の選択肢を多めに(やさしく)、後半は絞る。
+    -- 序ボードは初手の選択肢を多めに(やさしく)、後半は絞る。
     enoughMoves
       | specStage spec <= 5 = moves >= 6
       | otherwise           = moves >= 3
 
--- | 1 ステージ = 同じ設定の盤を variantCount 枚。失敗して再挑戦するとき別の盤を出す。
+-- | 1 ステージ = 同じ設定のボードを variantCount 枚。失敗して再挑戦するとき別のボードを出す。
 variantCount :: Int
 variantCount = 3
 
@@ -66,11 +66,11 @@ boardJson st = jObj
   , ("cells", jList (map jInt (toDigits (stBoard st))))
   ]
 
--- | テストベクタ: ランダムな盤に数手進めた状態と、各関数の結果。
+-- | テストベクタ: ランダムなボードに数手進めた状態と、各関数の結果。
 data Vector = Vector
   { vBoard :: Board
   , vPairs :: [(Pos, Pos)]
-  , vAfterRemove :: Maybe Board   -- ^ 最初の組を消して縮約した盤
+  , vAfterRemove :: Maybe Board   -- ^ 最初の組を消して縮約したボード
   , vAfterAdd :: Board
   }
 
@@ -86,7 +86,7 @@ makeVector seed = Vector b ps afterRemove (addNumbers b)
       ((i, j) : _) -> Just (applyMove (Remove i j) b)
       []           -> Nothing
 
--- | 乱数で選んだ組を n 手ぶん消す(消せる組が無ければそこで止める)。
+-- | 乱数で選んだ組を n 手ぶん消す(消せるペアが無ければそこで止める)。
 playRandom :: Seed -> Int -> Board -> Board
 playRandom _ 0 b = b
 playRandom s n b =

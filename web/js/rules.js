@@ -1,7 +1,7 @@
 // ルール(generator/src/NumberMatch/Rules.hs の移植)。
 // 正本は Haskell 側。関数名・意味をそろえ、web/test/rules.test.js で一致を確かめる。
 //
-// 盤面 board は数字の配列(読み順)。0 が空マス、1〜9 が数字。
+// ボード面 board は数字の配列(読み順)。0 が空マス、1〜9 が数字。
 // Haskell の Cell(Empty | Num n)を、JSON と同じ「0 か 1〜9」で表している。
 
 export const WIDTH = 9;
@@ -42,7 +42,7 @@ export function connected(board, i, j) {
   );
 }
 
-/** いま消せる組の一覧 [[i, j], ...] (i < j、i の昇順・j の昇順)。 */
+/** いま消せるペアの一覧 [[i, j], ...] (i < j、i の昇順・j の昇順)。 */
 export function validPairs(board) {
   const pairs = [];
   for (let i = 0; i < board.length; i++) {
@@ -60,7 +60,7 @@ export function removePair(i, j, board) {
   return board.map((c, p) => (p === i || p === j ? 0 : c));
 }
 
-/** 盤を行(長さ 9 の配列)に切り分ける。最後の行は短いことがある。 */
+/** ボードを行(長さ 9 の配列)に切り分ける。最後の行は短いことがある。 */
 export function rows(board) {
   const out = [];
   for (let p = 0; p < board.length; p += WIDTH) out.push(board.slice(p, p + WIDTH));

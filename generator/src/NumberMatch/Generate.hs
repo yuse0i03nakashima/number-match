@@ -1,5 +1,5 @@
--- | 盤面の生成。乱数も自分で書く(線形合同法)。
---   同じシードからは必ず同じ盤ができるので、面を「シード」だけで再現できる。
+-- | ボード面の生成。乱数も自分で書く(線形合同法)。
+--   同じシードからは必ず同じボードができるので、面を「シード」だけで再現できる。
 module NumberMatch.Generate
   ( Seed
   , nextSeed
@@ -27,8 +27,8 @@ digitFrom s = (s `div` 65536) `mod` 9 + 1
 randomDigits :: Seed -> Int -> [Int]
 randomDigits seed n = map digitFrom (take n (drop 1 (iterate nextSeed seed)))
 
--- | n 個の数字で埋めた盤(最後の行は途中まででよい)。
---   注意: 1 手で 2 個ずつ消えるので、追加なしで全消しできる盤はマス数が偶数。
+-- | n 個の数字で埋めたボード(最後の行は途中まででよい)。
+--   注意: 1 手で 2 個ずつ消えるので、追加なしで全消しできるボードはマス数が偶数。
 --   本家のように 27 個(3 行)から始めると、追加なしでは絶対に全消しできない。
 randomBoard :: Seed -> Int -> Board
 randomBoard seed n = fromDigits (randomDigits seed n)

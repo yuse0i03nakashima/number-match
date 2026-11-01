@@ -1,5 +1,5 @@
 -- | 全消し手順を探す(深さ優先探索)。
---   「この盤は追加 k 回以内で全消しできる」ことを、実際に手順を見つけて保証する。
+--   「このボードは追加 k 回以内で全消しできる」ことを、実際に手順を見つけて保証する。
 module NumberMatch.Solver
   ( solve
   , par
@@ -12,7 +12,7 @@ import Data.List (sortOn)
 import NumberMatch.Board
 import NumberMatch.Rules
 
--- | 一度調べた (盤面, 残り追加回数) の集合。同じ状態を二度調べない。
+-- | 一度調べた (ボード面, 残り追加回数) の集合。同じ状態を二度調べない。
 type Visited = Set.Set (Board, Int)
 
 -- | 探索の本体。返り値は (見つけた手順, 残り予算, 調べた状態)。
@@ -27,7 +27,7 @@ search budget adds b seen
   where
     key   = (b, adds)
     pairs = validPairs b
-    -- 消せる組があるうちは消す。無くなったときだけ追加を試す。
+    -- 消せるペアがあるうちは消す。無くなったときだけ追加を試す。
     candidates
       | null pairs = [Add | adds > 0]
       | otherwise  = [Remove i j | (i, j) <- orderMoves b pairs]
@@ -41,7 +41,7 @@ search budget adds b seen
     addsAfter Add = adds - 1
     addsAfter _   = adds
 
--- | 手の並べ替え(枝刈りの要)。行が消える手を先に、次に盤の上のほうの手を先に。
+-- | 手の並べ替え(枝刈りの要)。行が消える手を先に、次にボードの上のほうの手を先に。
 --   (第6章 高階関数: sortOn)
 orderMoves :: Board -> [(Pos, Pos)] -> [(Pos, Pos)]
 orderMoves b = sortOn key
@@ -61,7 +61,7 @@ par budget maxAdds b =
     (k : _) -> Just k
     []      -> Nothing
 
--- | 手順を盤に順に適用する(検証用)。
+-- | 手順をボードに順に適用する(検証用)。
 --   (第6章 高階関数: foldl)
 replay :: Board -> [Move] -> Board
 replay = foldl (flip applyMove)

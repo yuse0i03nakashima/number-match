@@ -1,7 +1,7 @@
 cabal-version:      3.0
 name:               numbermatch-gen
 version:            0.1.0.0
-synopsis:           Number Match の盤面生成器・ソルバ・ルール参照実装
+synopsis:           Number Match のボード面生成器・ソルバ・ルール参照実装
 build-type:         Simple
 
 common shared

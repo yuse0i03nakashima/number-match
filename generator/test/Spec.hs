@@ -17,7 +17,7 @@ tests =
   , ("合計 10 は組になる",            matches 4 6)
   , ("それ以外は組にならない",        not (matches 2 3))
 
-  -- 盤: 1 行目 [1,0,0,9,5,5,0,0,2], 2 行目 [8,0,0,0,0,0,0,0,0]
+  -- ボード: 1 行目 [1,0,0,9,5,5,0,0,2], 2 行目 [8,0,0,0,0,0,0,0,0]
   --      添字    0 1 2 3 4 5 6 7 8          9 ...
   , ("横: 間が空なら離れていてよい",  connected sample 0 3)
   , ("横: 間に数字があればだめ",      not (connected sample 3 8))
@@ -38,9 +38,9 @@ tests =
 
   , ("パリティ: 消しても偶奇は変わらない", all parityInvariant randomBoards)
   , ("ソルバ: 見つけた手順で本当に全消しになる", all solutionReplays solvableBoards)
-  , ("ソルバ: パリティが崩れた盤は追加なしでは解けない", all (\b -> solve 20000 0 b == Nothing) oddBoards)
-  , ("ソルバ: 検査対象の盤が実際に存在する", length solvableBoards >= 5)
-  , ("27 マス(奇数)の盤はパリティを満たさない", all (not . parityOk) [randomBoard s 27 | s <- [1 .. 50]])
+  , ("ソルバ: パリティが崩れたボードは追加なしでは解けない", all (\b -> solve 20000 0 b == Nothing) oddBoards)
+  , ("ソルバ: 検査対象のボードが実際に存在する", length solvableBoards >= 5)
+  , ("27 マス(奇数)のボードはパリティを満たさない", all (not . parityOk) [randomBoard s 27 | s <- [1 .. 50]])
   ]
   where
     sample   = fromDigits ([1,0,0,9,5,5,0,0,2] ++ [8,0,0,0,0,0,0,0,0])
