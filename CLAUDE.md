@@ -7,7 +7,7 @@
 - `generator/` — Haskell（cabal、依存は base・containers のみ）。**ルールの正本**。ボード面生成・解の存在保証・テストベクタ出力。
   - `cabal run gen` で `web/levels/stages.json` と `web/test/vectors.json` を書き出す。この2ファイルは手で編集しない。
 - `web/` — GitHub Pages で配信する静的サイト（ES modules、ビルド工程なし、外部ライブラリなし）。
-  - `js/rules.js` は Haskell の `Rules.hs` と同じ関数名・同じ意味。変更は両方に入れ、`node --test web/test/*.test.js` で一致を確認する。
+  - `js/rules.js` は Haskell の `Rules.hs` と同じ関数名・同じ意味。変更は両方に入れ、`node --test web/test/*.test.js` で一致を確認する。得点のための道の判定(`js/scoring.js`)は JavaScript だけにあり、ルールの正否には関わらない。
   - 調整値は `js/config.js` に集約する。
 - `docs/` — 学習用の解説（Markdown）。授業ノート `study/関数型言語/Notebook` の章と対応づける。
 - `.github/workflows/pages.yml` — `web/` を Pages に配置。

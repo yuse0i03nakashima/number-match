@@ -25,6 +25,13 @@ export class Renderer {
 
   setHeat(heat) {
     document.documentElement.style.setProperty('--heat', heatColor(heat));
+    document.documentElement.style.setProperty('--glow', heat.toFixed(2));
+  }
+
+  // スコア表示の中心座標(得点が飛んでいく先)
+  scoreCenter() {
+    const r = this.$('hud-score').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
 
   // ボード面全体を作り直す。selected / hintPair の見た目もここで付ける。

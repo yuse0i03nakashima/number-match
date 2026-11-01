@@ -38,6 +38,8 @@ export class FX {
     this.lines = [];
     this.sweeps = [];
     this.rings = [];
+    this.flies = [];
+    this.frozenUntil = 0;     // ヒットストップ: この時刻まで粒子を止める
     this.last = performance.now();
     this.resize();
     addEventListener('resize', () => this.resize());
@@ -104,6 +106,17 @@ export class FX {
     }
   }
 
+  // ヒットストップ: ms の間だけ粒子と浮き文字の動きを止める(描画は続ける)。
+  // 大きな出来事の直前に一瞬止めると、止まった分だけ「重さ」が出る。
+  freeze(ms) {
+    this.frozenUntil = Math.max(this.frozenUntil, performance.now() + ms);
+  }
+
+  // 文字が (x, y) から (tx, ty) へ飛んでいく(得点がスコア表示へ吸い込まれる演出)。
+  flyText(x, y, tx, ty, text, { color = PALETTE.white, size = 16, dur = 0.45, delay = 0 } = {}) {
+    this.flies.push({ x, y, tx, ty, text, color, size, dur, age: -delay });
+  }
+
   // 画面(要素)を揺らす。intensity は px。
   shake(el, intensity = 3, duration = 220) {
     if (!el) return;
@@ -133,6 +146,9 @@ export class FX {
   }
 
   update(dt) {
+    if (performance.now() < this.frozenUntil) return;   // ヒットストップ中は何も動かさない
+    for (const f of this.flies) f.age += dt;
+    this.flies = this.flies.filter((f) => f.age < f.dur);
     for (const p of this.particles) {
       p.age += dt;
       p.vy += p.gravity * dt;
@@ -200,6 +216,15 @@ export class FX {
       }
     }
     ctx.globalCompositeOperation = 'source-over';
+    for (const f of this.flies) {
+      if (f.age < 0) continue;
+      const u = f.age / f.dur, e = u * u * (3 - 2 * u);           // なめらかに加速・減速
+      const x = f.x + (f.tx - f.x) * e, y = f.y + (f.ty - f.y) * e - Math.sin(u * Math.PI) * 30;
+      ctx.globalAlpha = 1 - u * 0.3;
+      ctx.font = `500 ${f.size * (1 - u * 0.4)}px "DM Mono", monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = f.color; ctx.fillText(f.text, x, y);
+    }
     for (const f of this.floats) {
       const u = f.age / f.life;
       ctx.globalAlpha = u < 0.7 ? 1 : 1 - (u - 0.7) / 0.3;

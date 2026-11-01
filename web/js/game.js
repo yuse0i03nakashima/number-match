@@ -1,12 +1,18 @@
 // ゲームの進行(ルールの上に乗る層)。
-//   rules.js  … ボード面の純粋な操作(Haskell と同じ)
-//   game.js   … ラン・ステージ・チェーン・ライフ・スコア・保存   ← このファイル
-//   main.js   … 画面・演出・音とのつなぎ
+//   rules.js   … ボード面の純粋な操作(Haskell と同じ)
+//   scoring.js … 道の種類・速さによるボーナス(JavaScript だけ)
+//   game.js    … ラン・ステージ・チェーン・ライフ・スコア・保存   ← このファイル
+//   main.js    … 画面・演出・音とのつなぎ
 //
 // 設計: 各操作(tap / useAdd / useHint …)は状態を更新し、「起きたこと」をイベントの配列で返す。
 // 演出や音はイベントを見て動くので、ゲームの判断と見せ方が分かれる。
+//
+// 詰み(消せるペアがない)の扱い: ゲームは自分からは教えない。
+//   Add を押す  … 詰みなら「仕方ない」のでチェーンを半分残す。ペアが残っていたのに押すと途切れる。
+//   Hint を押す … 詰みなら「まだあると思い込んでいた」ので、途切れたうえに減点。
 
 import { validPairs, removePair, collapseRows, addNumbers, isCleared, matches, connected, rows } from './rules.js';
+import { pathInfo, difficultyBonus, speedTier } from './scoring.js';
 
 export class Game {
   constructor(stages, config, storage = globalThis.localStorage) {
@@ -37,14 +43,16 @@ export class Game {
   // ---------- 参照 ----------
   get stage() { return this.run?.stage ?? null; }
   get stageDef() { return this.run ? this.stages[this.run.stageIndex] : null; }
-  get multiplier() {
+  multiplierFor(chain) {
     const c = this.cfg.chain;
-    return Math.min(c.max, 1 + c.step * (this.stage?.chain ?? 0));
+    return Math.min(c.max, 1 + c.step * chain);
   }
+  get multiplier() { return this.multiplierFor(this.stage?.chain ?? 0); }
   get heat() {  // 0〜1。演出の熱さ
     const c = this.cfg.chain;
     return (this.multiplier - 1) / (c.max - 1);
   }
+  get isStuck() { return !!this.stage && validPairs(this.stage.board).length === 0; }
   worldOf(stageIndex) { return Math.floor(stageIndex / this.cfg.worldSize); }
   worldStart(stageIndex) { return this.worldOf(stageIndex) * this.cfg.worldSize; }
   get unlockedWorlds() { return this.worldOf(Math.min(this.progress.maxStage, this.stages.length - 1)) + 1; }
@@ -69,6 +77,7 @@ export class Game {
       stageScore: 0,
       selected: null,
       hintPair: null,
+      lastRemoveAt: null,    // 前の消去の時刻(速さボーナス用)
       status: 'play',        // play | clear | failed | runOver | complete
     };
     this.save();
@@ -76,7 +85,8 @@ export class Game {
   }
 
   // ---------- 操作 ----------
-  tap(pos) {
+  // now は現在時刻(ミリ秒)。検査では好きな値を渡せる。
+  tap(pos, now = Date.now()) {
     const st = this.stage;
     if (!st || st.status !== 'play') return [];
     const b = st.board;
@@ -94,22 +104,29 @@ export class Game {
       return [{ type: 'deselect', pos }];
     }
     const i = Math.min(st.selected, pos), j = Math.max(st.selected, pos);
-    if (matches(b[i], b[j]) && connected(b, i, j)) return this.remove(i, j);
-    // 組にならない: 選択を移す(本家と同じ)
+    if (matches(b[i], b[j]) && connected(b, i, j)) return this.remove(i, j, now);
+    // ペアにならない: 選択を移す(本家と同じ)
     const prev = st.selected; st.selected = pos;
     return [{ type: 'invalid', from: prev, to: pos }, { type: 'select', pos }];
   }
 
-  remove(i, j) {
+  remove(i, j, now) {
     const st = this.stage, b = st.board, cfg = this.cfg;
     const before = removePair(i, j, b);
     const clearedRows = rows(before).map((r, k) => (r.every((c) => c === 0) ? k : -1)).filter((k) => k >= 0);
     const after = collapseRows(before);
 
+    // 難しい道・速さのボーナス
+    const info = pathInfo(b, i, j);
+    const diff = difficultyBonus(cfg.score, info);
+    const elapsed = st.lastRemoveAt === null ? Infinity : now - st.lastRemoveAt;
+    const speed = speedTier(cfg.speed, elapsed);
+    st.lastRemoveAt = now;
+
     st.chain += 1;
     const mult = this.multiplier;
-    const pairPoints = Math.round(cfg.score.pairBase * mult);
-    const rowPoints = cfg.score.rowClear * clearedRows.length * clearedRows.length;
+    const pairPoints = Math.round((cfg.score.pairBase + diff.bonus) * mult * speed.mult);
+    const rowPoints = Math.round(cfg.score.rowClear * clearedRows.length * clearedRows.length * mult);
     const points = pairPoints + rowPoints;
     st.stageScore += points;
     this.run.score += points;
@@ -120,47 +137,64 @@ export class Game {
     const events = [{
       type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints,
       chain: st.chain, mult, heat: this.heat, clearedRows, boardBefore: before, board: after,
+      path: info, bonus: diff.bonus, labels: diff.labels, speed: speed.tier, speedMult: speed.mult, elapsed,
     }];
     events.push(...this.afterBoardChange());
     this.save();
     return events;
   }
 
-  // ボードが変わった後の判定: クリア / 詰み(追加できる) / 詰み(追加できない = 失敗)
+  // ボードが変わった後の判定: クリアだけを見る。詰みはプレイヤーが Add / Hint を押したときに分かる。
   afterBoardChange() {
-    const st = this.stage;
-    if (isCleared(st.board)) return this.stageClear();
-    if (validPairs(st.board).length > 0) return [];
-    if (st.addsLeft > 0) return [{ type: 'stuck', addsLeft: st.addsLeft }];
-    return this.stageFailed('stuck');
+    if (isCleared(this.stage.board)) return this.stageClear();
+    return [];
   }
 
   useAdd() {
-    const st = this.stage;
+    const st = this.stage, cfg = this.cfg;
     if (!st || st.status !== 'play') return [];
-    if (st.addsLeft <= 0) return [{ type: 'noAdds' }];
+    const stuck = this.isStuck;
+    if (st.addsLeft <= 0) {
+      // Add が無い。詰んでいればここで失敗が確定する
+      return stuck ? this.stageFailed('stuck') : [{ type: 'noAdds' }];
+    }
     const oldLength = st.board.length;
+    const chainBefore = st.chain;
     st.board = addNumbers(st.board);
     st.addsLeft -= 1;
     st.addsUsed += 1;
-    const brokeChain = st.chain > 0;
-    st.chain = 0;
+    // 詰んでからの Add は仕方ないので控えめ(チェーンを一部残す)。ペアが残っていたのに押すと途切れる
+    st.chain = stuck ? Math.floor(st.chain * cfg.stuck.addKeepRatio) : 0;
     st.selected = null;
     st.hintPair = null;
-    const events = [{ type: 'add', oldLength, newLength: st.board.length, addsLeft: st.addsLeft, brokeChain, board: st.board }];
-    events.push(...this.afterBoardChange());
+    st.lastRemoveAt = null;
+    const events = [{
+      type: 'add', oldLength, newLength: st.board.length, addsLeft: st.addsLeft, board: st.board,
+      stuckBefore: stuck, chainBefore, chainAfter: st.chain,
+      multBefore: this.multiplierFor(chainBefore), multAfter: this.multiplier,
+    }];
     this.save();
     return events;
   }
 
   useHint() {
-    const st = this.stage;
+    const st = this.stage, cfg = this.cfg;
     if (!st || st.status !== 'play') return [];
     const pairs = validPairs(st.board);
-    if (pairs.length === 0) return [{ type: 'noHint' }];
     const brokeChain = st.chain > 0;
     st.chain = 0;
     st.selected = null;
+    st.lastRemoveAt = null;
+    if (pairs.length === 0) {
+      // まだあると思っていた: 途切れたうえに減点。Add も無ければ失敗
+      const penalty = Math.min(st.stageScore, cfg.score.hintWhenStuck);
+      st.stageScore -= penalty;
+      this.run.score -= penalty;
+      const events = [{ type: 'noHint', penalty, brokeChain, addsLeft: st.addsLeft }];
+      if (st.addsLeft <= 0) events.push(...this.stageFailed('stuck'));
+      this.save();
+      return events;
+    }
     st.hintPair = pairs[Math.floor(Math.random() * pairs.length)];
     this.save();
     return [{ type: 'hint', pair: st.hintPair, brokeChain }];
@@ -234,7 +268,7 @@ export class Game {
     return this.startStage();
   }
 
-  // ラン終了後: 今のワールドの先頭から新しいラン
+  // ラン終了後: 今のワールドのはじめから新しいラン
   restartFromWorld() {
     const idx = this.run ? this.worldStart(this.run.stageIndex) : 0;
     return this.newRun(idx);

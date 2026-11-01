@@ -22,7 +22,8 @@
   --red:#ef4444;
   --purple:#a78bfa;
 
-  --heat:var(--blue);              /* チェーンの熱(JS が上書き) */
+  --heat:var(--blue);              /* チェーンの熱の色(JS が上書き) */
+  --glow:0;                         /* チェーンの熱 0〜1(JS が上書き)。ボードの縁の光と格子の明るさ */
 
   --font-ja:'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
   --font-mono:'DM Mono', 'SFMono-Regular', Consolas, monospace;
@@ -54,8 +55,11 @@ body::after {
     linear-gradient(var(--border) 1px, transparent 1px),
     linear-gradient(90deg, var(--border) 1px, transparent 1px);
   background-size:48px 48px;
-  opacity:0.15; pointer-events:none; z-index:0;
+  opacity:calc(0.15 + var(--glow) * 0.2); pointer-events:none; z-index:0;
+  transition:opacity 0.4s;
 }
+body.gridflash::after { animation:gridflash 0.45s ease-out; }
+@keyframes gridflash { 0%{opacity:0.7} 100%{opacity:calc(0.15 + var(--glow) * 0.2)} }
 
 #fx { position:fixed; inset:0; width:100%; height:100%; pointer-events:none; z-index:50; }
 
@@ -118,7 +122,11 @@ body::after {
   overflow-y:auto;
   scrollbar-width:none;
   will-change:transform;
+  box-shadow:inset 0 0 calc(10px + var(--glow) * 70px) color-mix(in srgb, var(--heat) calc(var(--glow) * 45%), transparent);
+  transition:box-shadow 0.4s;
 }
+.app.punch { animation:punch 0.28s cubic-bezier(.2,1.4,.4,1); }
+@keyframes punch { 0%{transform:scale(1)} 35%{transform:scale(1.035)} 100%{transform:scale(1)} }
 .board-wrap::-webkit-scrollbar { display:none; }
 .board {
   display:grid;
@@ -193,7 +201,7 @@ body::after {
   background:var(--surface2); border:1px solid var(--border-light); border-left:2px solid var(--amber);
   color:var(--text); font-family:var(--font-mono); font-size:11px; letter-spacing:1px;
   padding:10px 18px; z-index:60; opacity:0; transition:all 0.25s ease; pointer-events:none;
-  max-width:calc(100vw - 32px); white-space:nowrap;
+  max-width:min(440px, calc(100vw - 32px)); width:max-content; text-align:center; line-height:1.6;
 }
 .toast[hidden] { display:block; }
 .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
@@ -216,7 +224,7 @@ body::after {
 .card .eyebrow { font-family:var(--font-mono); font-size:10px; letter-spacing:3px; text-transform:uppercase; color:var(--text-dim); margin-bottom:6px; }
 .card h1 { font-family:var(--font-mono); font-weight:500; font-size:22px; letter-spacing:3px; text-transform:uppercase; line-height:1.2; }
 .card h1.big { font-size:44px; letter-spacing:8px; }
-.card .ja { font-family:var(--font-ja); font-weight:300; font-size:13px; color:var(--text-muted); margin-top:6px; }
+.card .ja { font-family:var(--font-ja); font-weight:300; font-size:13px; color:var(--text-muted); margin-top:6px; text-wrap:pretty; }
 .card .rows { margin:18px 0 6px; border-top:1px solid var(--border); }
 .card .row { display:flex; justify-content:space-between; align-items:baseline; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
 .card .row .k { color:var(--text-muted); font-family:var(--font-ja); font-weight:300; }
@@ -245,7 +253,7 @@ body::after {
 .worlds { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:8px; }
 .worlds .btn { padding:10px 6px; font-size:10px; flex-direction:column; gap:2px; }
 .worlds .btn small { font-size:9px; letter-spacing:1px; color:var(--text-dim); text-transform:none; }
-.card .rules { font-size:13px; line-height:1.9; color:var(--text-muted); font-weight:300; margin-top:12px; }
+.card .rules { font-size:13px; line-height:1.9; color:var(--text-muted); font-weight:300; margin-top:12px; text-wrap:pretty; }
 .card .rules b { color:var(--text); font-weight:500; }
 .card .rules .ex { font-family:var(--font-mono); color:var(--heat); }
 .meta { font-family:var(--font-mono); font-size:10px; letter-spacing:1.5px; color:var(--text-dim); margin-top:14px; text-align:center; }
