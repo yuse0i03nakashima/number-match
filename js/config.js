@@ -3,6 +3,7 @@ export const CONFIG = {
   score: {
     pairBase: 10,          // 1 Pair の基礎点。得点 = 基礎点 × 難しさ倍率 × Chain 倍率 × Speed 倍率(× FEVER)
     rowClear: 100,         // 行が消えたとき: rowClear × (同時に消えた行数)^2 × Chain 倍率
+    digitClear: 150,       // ある数字を Board から全部消し切ったとき(1 つの数字ごと)× Chain 倍率。Add で戻ってきたらまた狙える
     stageClear: 200,       // Stage Clear(ALL CLEAR)。Board を全部消すと入り、Chain は途切れずに次の Stage へ続く
     perfect: 500,          // Add なしで Clear
     addSaved: 150,         // Clear 時、使わずに残した Add 1 回ごと(温存 Bonus)
@@ -63,6 +64,7 @@ export const CONFIG = {
   },
   worldSize: 5,            // 5 Stage = 1 World。Run 終了後は World のはじめから再開。Result の画面は World の終わりだけ
   flow: {
+    continueAfterClear: true,   // true: 全消ししたら Result を出さず次の Stage へ続く(Chain・FEVER を持ち越し)。false: 毎 Stage で Result
     autoNextMs: 2200,      // ALL CLEAR の演出を見せてから次の Stage へ進むまでの時間
   },
   fx: {

@@ -22,7 +22,7 @@
 //
 // 時間: tap と tick は現在時刻(ミリ秒)を受け取る。Chain は時間で減り(ゲージ)、FEVER と FLASH は時間で終わる。
 
-import { validPairs, removePair, collapseRows, isCleared, matches, connected, rows } from './rules.js';
+import { validPairs, removePair, collapseRows, isCleared, matches, connected, rows, numbers } from './rules.js';
 import { pathInfo, difficultyMult, speedTier } from './scoring.js';
 import { chooseAddition } from './solver.js';
 
@@ -258,7 +258,11 @@ export class Game {
     const hintedRatio = hinted ? cfg.score.hintedPairRatio : 1;
     const pairPoints = Math.round(cfg.score.pairBase * diff.mult * mult * speed.mult * feverMult * hintedRatio);
     const rowPoints = Math.round(cfg.score.rowClear * clearedRows.length * clearedRows.length * mult * feverMult);
-    const points = pairPoints + rowPoints;
+    // DIGIT CLEAR: この 1 手で Board から消え切った数字(残りが 0 になった数字)
+    const left = new Set(numbers(after));
+    const digitsCleared = [...new Set([b[i], b[j]])].filter((d) => !left.has(d)).sort();
+    const digitPoints = Math.round(cfg.score.digitClear * digitsCleared.length * mult * feverMult);
+    const points = pairPoints + rowPoints + digitPoints;
     st.stageScore += points;
     this.run.score += points;
     st.selected = null;
@@ -268,7 +272,7 @@ export class Game {
     if (scoped) labels.push('SCOPE');
     if (hinted) labels.push('HINTED');
     events.push({
-      type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints,
+      type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints, digitPoints, digitsCleared,
       chain: st.chain, mult, heat: this.heat, clearedRows, boardBefore: before, board: after,
       path: info, diffMult: diff.mult, labels, speed: speed.tier, speedMult: speed.mult, elapsed,
       fever: !!st.fever, hinted, scoped, scopeBroken,

@@ -103,6 +103,12 @@ export class Sound {
     this.noise({ dur: 0.35 + streak * 0.05, gain: 0.18 + streak * 0.03, from: 300, to: 3000 });
   }
 
+  // ある数字を消し切った: 上昇する短いアルペジオ(数字の数だけ重ねる)
+  digitClear(count = 1) {
+    [0, 4, 7, 11].forEach((k, n) => this.tone(noteFreq(k + 7), { type: 'sine', dur: 0.35, gain: 0.3, when: n * 0.06 }));
+    if (count > 1) [7, 11, 14].forEach((k, n) => this.tone(noteFreq(k + 7), { type: 'triangle', dur: 0.4, gain: 0.25, when: 0.25 + n * 0.06 }));
+  }
+
   // Chain が時間で 1 つ減った: 低く短い音
   chainDecay() { this.tone(noteFreq(1) / 2, { type: 'sine', dur: 0.15, gain: 0.14, lowpass: 900 }); }
 
