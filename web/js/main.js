@@ -52,7 +52,7 @@ async function boot() {
   // Chain ゲージと FEVER は時間で動くので、定期的に進めて HUD を描き直す
   setInterval(() => {
     // BGM: Stage 中は Chain の熱と FEVER に合わせ、Title では止める。オーバーレイ中は小さく
-    if (game.stage?.status === 'play' || game.stage?.status === 'clear') { bgm.setHeat(game.heat); bgm.setFever(game.inFever); bgm.play('normal'); }
+    if (game.stage?.status === 'play' || game.stage?.status === 'clear') { bgm.setHeat(game.heat); bgm.setFever(game.inFever); bgm.play(); }
     else if (titleShown) bgm.stop();
     bgm.duck(overlayOpen());
     if (!game.stage || game.stage.status !== 'play' || overlayOpen()) return;
@@ -493,6 +493,9 @@ async function boot() {
   document.getElementById('btn-hint').onclick = () => { if (!busy && !overlayOpen()) { ensureAudio(); handle(game.useHint()); } };
   document.getElementById('btn-menu').onclick = showMenu;
   soundLabel();
+
+  // 手元で動かすときだけ、検査用に中身を見えるようにする
+  if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') globalThis.__ten = { game, bgm, sound };
 
   // ---------- 起動 ----------
   if (game.run && game.stage && game.stage.status === 'play') redraw();
