@@ -1,7 +1,7 @@
 // 得点のための補助(JavaScript だけにある。ルールの正否には関わらない)。
-//   pathInfo   … ペアがどの道でつながっているか(種類と、間の空マスの数)
-//   difficultyBonus … その道に応じたボーナス点とラベル
-//   speedTier  … 前の消去からの時間に応じた倍率とラベル
+//   pathInfo         … Pair がどの道でつながっているか(種類と、間の空マスの数)
+//   difficultyMult   … その道に応じた倍率とラベル
+//   speedTier        … 前の消去からの時間に応じた倍率とラベル
 
 import { WIDTH, rowOf, colOf, cellAt } from './rules.js';
 
@@ -43,24 +43,23 @@ export function pathInfo(board, i, j) {
   return best;
 }
 
-/** 道の種類と間の空マスから、基礎点に足すボーナスとラベル(演出用)を決める。 */
-export function difficultyBonus(scoreCfg, info) {
-  if (!info) return { bonus: 0, labels: [] };
-  let bonus = 0;
+/**
+ * 道の種類と間の空マスから、Pair の得点に掛ける倍率とラベル(演出用)を決める。
+ *   横の隣どうし ×1.0、縦 ×1.2、またぎ ×1.5、斜め ×1.5。
+ *   間の空マス 1 つごとに +0.25(斜めは +0.5)。
+ */
+export function difficultyMult(diffCfg, info) {
+  if (!info) return { mult: 1, labels: [] };
+  let mult = 1;
   const labels = [];
+  if (info.kind === 'vertical') { mult = diffCfg.vertical; labels.push('VERTICAL'); }
+  if (info.kind === 'wrap') { mult = diffCfg.wrap; labels.push('WRAP'); }
+  if (info.kind === 'diagonal') { mult = diffCfg.diagonal; labels.push(info.gap > 0 ? 'DIAGONAL SNIPE' : 'DIAGONAL'); }
   if (info.gap > 0) {
-    bonus += info.gap * scoreCfg.gapPerCell;
-    labels.push(info.gap >= 3 ? 'LONG SHOT' : 'OPENED');   // 他を消して初めて通った道
+    mult += info.gap * (info.kind === 'diagonal' ? diffCfg.diagonalGapPerCell : diffCfg.gapPerCell);
+    if (info.kind !== 'diagonal') labels.unshift(info.gap >= 3 ? 'LONG SHOT' : 'OPENED');   // 他を消して初めて通った道
   }
-  if (info.kind === 'wrap') { bonus += scoreCfg.wrap; labels.push('WRAP'); }
-  if (info.kind === 'diagonal') {
-    bonus += scoreCfg.diagonal;
-    // 離れた斜めは見つけにくいので、空マスごとにさらに加点
-    if (info.gap > 0) { bonus += info.gap * scoreCfg.diagonalGapPerCell; labels.push('DIAGONAL SNIPE'); }
-    else labels.push('DIAGONAL');
-  }
-  if (info.kind === 'vertical') { bonus += scoreCfg.vertical; }
-  return { bonus, labels };
+  return { mult: Math.round(mult * 100) / 100, labels };
 }
 
 /** 前の消去からの経過ミリ秒 → { tier: 'fast' | 'quick' | null, mult }。 */

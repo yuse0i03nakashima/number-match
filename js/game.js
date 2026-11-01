@@ -1,22 +1,29 @@
 // ゲームの進行(ルールの上に乗る層)。
 //   rules.js   … Board の純粋な操作(Haskell と同じ)
-//   scoring.js … 道の種類・速さによる Bonus(JavaScript だけ)
-//   game.js    … Run・Stage・Chain・FEVER・Heart・Score・保存   ← このファイル
+//   scoring.js … 道の種類・速さによる倍率(JavaScript だけ)
+//   solver.js  … 全消し手順の探索(Add の並びを選ぶ)
+//   game.js    … Run・Stage・Chain・FEVER・Hint・Heart・Score・保存   ← このファイル
 //   main.js    … 画面・演出・音とのつなぎ
 //
 // 設計: 各操作(tap / useAdd / useHint / tick …)は状態を更新し、「起きたこと」をイベントの配列で返す。
 // 演出や音はイベントを見て動くので、ゲームの判断と見せ方が分かれる。
 //
-// 詰み(消せる Pair がない)の扱い: ゲームは自分からは教えない。
-//   Add を押す     … 詰みなら「仕方ない」ので Chain を半分残す。Pair が残っていたのに押すと途切れる。
-//   Hint を押す    … 詰みなら「まだあると思い込んでいた」ので、途切れたうえに減点。
+// Dead End(消せる Pair がない)の扱い: ゲームは自分からは教えない。
+//   Add を押す     … Dead End なら「仕方ない」ので Chain を半分残す。Pair が残っていたのに押すと途切れる。
+//   Hint を押す    … Dead End なら「まだあると思い込んでいた」ので、Chain 半分と減点。
 //   Add が尽きたら … ADD ボタンは GIVE UP になる。押せば Heart −1 で Stage 得点の半分は残る。
 //                    それに気づかず Hint を押すと Heart −1、Stage 得点を全部失い、さらに減点。
 //
-// 時間: tap と tick は現在時刻(ミリ秒)を受け取る。Chain は時間で減り(ゲージ)、FEVER は時間で終わる。
+// Hint は Chain 倍率で性格が変わる(3 段階。cfg.hint):
+//   HINT  (低倍率) … Pair を 1 組示す。示された Pair は得点半分、Chain は維持(増えない)。
+//   FLASH (中倍率) … 消せる Pair を全部一瞬だけ光らせる。ゲージが半分に減る。
+//   SCOPE (高倍率・FEVER) … 相手のいるタイルを 1 枚光らせる。相手は自分で探す。
+//                    外すと 1 回目 Chain −3、2 回目で Chain 半分。光ったタイルを使わず別の Pair を消しても Chain 半分。
+//
+// 時間: tap と tick は現在時刻(ミリ秒)を受け取る。Chain は時間で減り(ゲージ)、FEVER と FLASH は時間で終わる。
 
 import { validPairs, removePair, collapseRows, isCleared, matches, connected, rows } from './rules.js';
-import { pathInfo, difficultyBonus, speedTier } from './scoring.js';
+import { pathInfo, difficultyMult, speedTier } from './scoring.js';
 import { chooseAddition } from './solver.js';
 
 const RANKS = ['C', 'B', 'A', 'S'];
@@ -62,7 +69,13 @@ export class Game {
   }
   get isStuck() { return !!this.stage && validPairs(this.stage.board).length === 0; }
   get inFever() { return !!this.stage?.fever; }
-  /** FEVER の残り(0〜1)。FEVER 中でなければ 0。 */
+  /** いまの Hint の段階: 'hint' | 'flash' | 'scope'。 */
+  get hintTier() {
+    const h = this.cfg.hint, m = this.multiplier;
+    if (this.inFever || m >= h.scopeFrom) return 'scope';
+    if (m >= h.flashFrom) return 'flash';
+    return 'hint';
+  }
   feverRatio(now) {
     const f = this.stage?.fever;
     if (!f) return 0;
@@ -81,7 +94,6 @@ export class Game {
   worldStart(stageIndex) { return this.worldOf(stageIndex) * this.cfg.worldSize; }
   get unlockedWorlds() { return this.worldOf(Math.min(this.progress.maxStage, this.stages.length - 1)) + 1; }
   get totalStars() { return Object.values(this.progress.stars).reduce((a, b) => a + b, 0); }
-  /** Rank ごとの個数 { S: n, A: n, B: n, C: n }。 */
   get rankCounts() {
     const out = { S: 0, A: 0, B: 0, C: 0 };
     for (const r of Object.values(this.progress.ranks)) if (r in out) out[r] += 1;
@@ -103,10 +115,14 @@ export class Game {
       board: variant.cells.slice(),
       addsLeft: def.adds,
       addsUsed: 0,
+      hintsLeft: this.cfg.hint.perStage,
+      hintsUsed: 0,
       chain: 0,
       stageScore: 0,
       selected: null,
-      hintPair: null,
+      hintPair: null,        // HINT で示した Pair(消すまで残る)
+      flashUntil: null,      // FLASH の終わる時刻
+      scope: null,           // SCOPE: { tile, misses }
       lastRemoveAt: null,    // 前の消去の時刻(速さ Bonus と Chain ゲージ用)
       decayed: 0,            // 前の消去から Chain が減った回数
       fever: null,           // FEVER 中なら { until }
@@ -123,15 +139,19 @@ export class Game {
     if (st.fever) st.fever.until = now + this.cfg.fever.durationMs * 0.5;
     st.lastRemoveAt = st.chain > 0 ? now : null;
     st.decayed = 0;
+    st.flashUntil = null;
     this.save();
   }
 
   // ---------- 時間 ----------
-  /** 定期的に呼ぶ。Chain の減少と FEVER の終わりを進める。 */
   tick(now) {
     const st = this.stage, cfg = this.cfg;
     if (!st || st.status !== 'play') return [];
     const events = [];
+    if (st.flashUntil !== null && now >= st.flashUntil) {
+      st.flashUntil = null;
+      events.push({ type: 'flashEnd' });
+    }
     if (st.fever && now >= st.fever.until) {
       st.fever = null;
       st.chain = Math.floor(st.chain * cfg.fever.endChainRatio);
@@ -148,7 +168,10 @@ export class Game {
           st.chain = Math.max(0, st.chain - steps);
           st.decayed += steps;
           events.push({ type: 'chainDecay', from: before, chain: st.chain, mult: this.multiplier, heat: this.heat });
-          if (st.chain === 0) st.lastRemoveAt = null;
+          if (st.chain === 0) {
+            st.lastRemoveAt = null;
+            if (st.scope) { st.scope = null; events.push({ type: 'scopeEnd', reason: 'decay' }); }
+          }
         }
       }
     }
@@ -178,7 +201,25 @@ export class Game {
     if (matches(b[i], b[j]) && connected(b, i, j)) return this.remove(i, j, now);
     // Pair にならない: 選択を移す(本家と同じ)
     const prev = st.selected; st.selected = pos;
-    return [{ type: 'invalid', from: prev, to: pos }, { type: 'select', pos }];
+    const events = [{ type: 'invalid', from: prev, to: pos }, { type: 'select', pos }];
+    // SCOPE の光ったタイルを含む見当違いは Chain を削る
+    if (st.scope && (st.scope.tile === i || st.scope.tile === j)) events.push(...this.scopeMiss());
+    return events;
+  }
+
+  scopeMiss() {
+    const st = this.stage, h = this.cfg.hint;
+    st.scope.misses += 1;
+    const before = st.chain;
+    if (st.scope.misses === 1) {
+      st.chain = Math.max(0, st.chain - h.scopeMissChain);
+      this.save();
+      return [{ type: 'scopeMiss', misses: 1, from: before, chain: st.chain, mult: this.multiplier }];
+    }
+    st.chain = Math.floor(st.chain * h.scopeBreakRatio);
+    st.scope = null;
+    this.save();
+    return [{ type: 'scopeMiss', misses: 2, from: before, chain: st.chain, mult: this.multiplier }, { type: 'scopeEnd', reason: 'miss' }];
   }
 
   remove(i, j, now) {
@@ -186,33 +227,50 @@ export class Game {
     const before = removePair(i, j, b);
     const clearedRows = rows(before).map((r, k) => (r.every((c) => c === 0) ? k : -1)).filter((k) => k >= 0);
     const after = collapseRows(before);
+    const events = [];
 
-    // 難しい道・速さの Bonus
+    // Hint の約束の確認(得点の前に Chain を調整する)
+    const hinted = !!st.hintPair && st.hintPair[0] === i && st.hintPair[1] === j;     // HINT で示された Pair
+    let scoped = false, scopeBroken = false;
+    if (st.scope) {
+      if (st.scope.tile === i || st.scope.tile === j) scoped = true;
+      else { scopeBroken = true; st.chain = Math.floor(st.chain * cfg.hint.scopeBreakRatio); }
+      st.scope = null;
+    }
+    st.hintPair = null;
+
+    // 難しい道・速さの倍率
     const info = pathInfo(b, i, j);
-    const diff = difficultyBonus(cfg.score, info);
+    const diff = difficultyMult(cfg.difficulty, info);
     const elapsed = st.lastRemoveAt === null ? Infinity : now - st.lastRemoveAt;
-    const speed = speedTier(cfg.speed, elapsed);
+    const speed = scoped ? { tier: null, mult: 1 } : speedTier(cfg.speed, elapsed);   // SCOPE の補助を受けた Pair に Speed は付かない
     st.lastRemoveAt = now;
     st.decayed = 0;
 
-    st.chain += 1;
+    // Chain: 補助を受けた Pair(HINT / SCOPE)は増えない。それ以外は +1
+    const assisted = hinted || scoped;
+    if (!assisted) st.chain += 1;
     const mult = this.multiplier;
     const feverMult = st.fever ? cfg.fever.pointMult : 1;
-    const pairPoints = Math.round((cfg.score.pairBase + diff.bonus) * mult * speed.mult * feverMult);
+    const hintedRatio = hinted ? cfg.score.hintedPairRatio : 1;
+    const pairPoints = Math.round(cfg.score.pairBase * diff.mult * mult * speed.mult * feverMult * hintedRatio);
     const rowPoints = Math.round(cfg.score.rowClear * clearedRows.length * clearedRows.length * mult * feverMult);
     const points = pairPoints + rowPoints;
     st.stageScore += points;
     this.run.score += points;
     st.selected = null;
-    st.hintPair = null;
     st.board = after;
 
-    const events = [{
+    const labels = [...diff.labels];
+    if (scoped) labels.push('SCOPE');
+    if (hinted) labels.push('HINTED');
+    events.push({
       type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints,
       chain: st.chain, mult, heat: this.heat, clearedRows, boardBefore: before, board: after,
-      path: info, bonus: diff.bonus, labels: diff.labels, speed: speed.tier, speedMult: speed.mult, elapsed,
-      fever: !!st.fever,
-    }];
+      path: info, diffMult: diff.mult, labels, speed: speed.tier, speedMult: speed.mult, elapsed,
+      fever: !!st.fever, hinted, scoped, scopeBroken,
+    });
+    if (scopeBroken) events.push({ type: 'scopeEnd', reason: 'ignored', chain: st.chain, mult: this.multiplier });
     // 倍率が上限に達したら FEVER 開始
     if (!st.fever && mult >= cfg.chain.max) {
       st.fever = { until: now + cfg.fever.durationMs };
@@ -223,7 +281,7 @@ export class Game {
     return events;
   }
 
-  // Board が変わった後の判定: Clear だけを見る。詰みはプレイヤーが Add / Hint を押したときに分かる。
+  // Board が変わった後の判定: Clear だけを見る。Dead End はプレイヤーが Add / Hint を押したときに分かる。
   afterBoardChange() {
     if (isCleared(this.stage.board)) return this.stageClear();
     return [];
@@ -241,10 +299,10 @@ export class Game {
     st.board = added.board;
     st.addsLeft -= 1;
     st.addsUsed += 1;
-    // 詰んでからの Add は仕方ないので控えめ(Chain を一部残す)。Pair が残っていたのに押すと途切れる
+    // Dead End からの Add は仕方ないので控えめ(Chain を一部残す)。Pair が残っていたのに押すと途切れる
     st.chain = stuck ? Math.floor(st.chain * cfg.stuck.addKeepRatio) : 0;
     st.selected = null;
-    st.hintPair = null;
+    st.hintPair = null; st.scope = null; st.flashUntil = null;
     st.lastRemoveAt = st.chain > 0 ? now : null;
     st.decayed = 0;
     const events = [{
@@ -257,35 +315,64 @@ export class Game {
     return events;
   }
 
-  useHint() {
+  /** Hint の料金を払う。FEVER 中は時間、それ以外は使用回数。払えなければ false。 */
+  payHint(now) {
     const st = this.stage, cfg = this.cfg;
+    if (st.fever) { st.fever.until -= cfg.fever.hintTimeCostMs; st.hintsUsed += 1; return true; }
+    if (st.hintsLeft <= 0) return false;
+    st.hintsLeft -= 1; st.hintsUsed += 1;
+    return true;
+  }
+
+  useHint(now = Date.now()) {
+    const st = this.stage, cfg = this.cfg, h = cfg.hint;
     if (!st || st.status !== 'play') return [];
+    const tier = this.hintTier;
     const pairs = validPairs(st.board);
-    const brokeChain = st.chain > 0;
-    st.chain = 0;
     st.selected = null;
-    st.lastRemoveAt = null;
-    st.decayed = 0;
+
     if (pairs.length === 0) {
+      // Dead End なのに押した
       if (st.addsLeft <= 0) {
-        // 気づかずに Hint: Stage 得点を全部失い、さらに減点して失敗
-        const extra = Math.min(this.run.score - st.stageScore, cfg.score.blindHintPenalty);
-        this.run.score -= Math.max(0, extra);
-        const events = [{ type: 'noHint', penalty: st.stageScore + Math.max(0, extra), brokeChain, addsLeft: 0, blind: true }];
+        // Add も無い: Stage 得点を全部失い、さらに減点して失敗
+        const extra = Math.max(0, Math.min(this.run.score - st.stageScore, cfg.score.blindHintPenalty));
+        this.run.score -= extra;
+        const events = [{ type: 'noHint', penalty: st.stageScore + extra, addsLeft: 0, blind: true, tier }];
         events.push(...this.stageFailed('blindHint', 0));
         this.save();
         return events;
       }
-      // まだあると思っていた: 途切れたうえに減点
+      if (!this.payHint(now)) return [{ type: 'noHints', tier }];
+      const before = st.chain;
+      st.chain = Math.floor(st.chain * h.stuckKeepRatio);
+      st.scope = null; st.hintPair = null;
       const penalty = Math.min(st.stageScore, cfg.score.hintWhenStuck);
-      st.stageScore -= penalty;
-      this.run.score -= penalty;
+      st.stageScore -= penalty; this.run.score -= penalty;
       this.save();
-      return [{ type: 'noHint', penalty, brokeChain, addsLeft: st.addsLeft, blind: false }];
+      return [{ type: 'noHint', penalty, addsLeft: st.addsLeft, blind: false, tier, from: before, chain: st.chain, mult: this.multiplier, hintsLeft: st.hintsLeft }];
     }
-    st.hintPair = pairs[Math.floor(Math.random() * pairs.length)];
+
+    if (!this.payHint(now)) return [{ type: 'noHints', tier }];
+    if (tier === 'hint') {
+      st.hintPair = pairs[Math.floor(Math.random() * pairs.length)];
+      this.save();
+      return [{ type: 'hint', tier, pair: st.hintPair, hintsLeft: st.hintsLeft }];
+    }
+    if (tier === 'flash') {
+      st.flashUntil = now + h.flashMs;
+      // ゲージを半分に: 猶予の半分が過ぎたことにする
+      if (st.chain > 0) { st.lastRemoveAt = now - cfg.chain.decayGraceMs * (1 - h.flashGaugeRatio); st.decayed = 0; }
+      this.save();
+      return [{ type: 'flash', tier, pairs, until: st.flashUntil, hintsLeft: st.hintsLeft }];
+    }
+    // scope: 相手のいるタイルを 1 枚。相手が少ないタイルを選ぶ(探しがいがある)
+    const count = new Map();
+    for (const [a, c] of pairs) { count.set(a, (count.get(a) ?? 0) + 1); count.set(c, (count.get(c) ?? 0) + 1); }
+    const tiles = [...count.entries()].sort((x, y) => x[1] - y[1]);
+    const tile = tiles[Math.floor(Math.random() * Math.min(3, tiles.length))][0];
+    st.scope = { tile, misses: 0 };
     this.save();
-    return [{ type: 'hint', pair: st.hintPair, brokeChain }];
+    return [{ type: 'scope', tier, tile, remaining: pairs.length, hintsLeft: st.hintsLeft, fever: !!st.fever }];
   }
 
   // GIVE UP = 分かったうえでの失敗。Stage 得点の半分は残る
@@ -311,12 +398,13 @@ export class Game {
     const clearBonus = cfg.score.stageClear;
     const perfectBonus = perfect ? cfg.score.perfect : 0;
     const savedBonus = st.addsLeft * cfg.score.addSaved;
+    const hintBonus = st.hintsLeft * cfg.score.hintSaved;
     const lifeGain = perfect && this.run.lives < cfg.lives.max ? cfg.lives.perfectRecover : 0;
     this.run.lives = Math.min(cfg.lives.max, this.run.lives + lifeGain);
-    const bonusTotal = clearBonus + perfectBonus + savedBonus;
+    const bonusTotal = clearBonus + perfectBonus + savedBonus + hintBonus;
     this.run.score += bonusTotal;
     st.stageScore += bonusTotal;
-    st.fever = null;
+    st.fever = null; st.scope = null; st.flashUntil = null;
     st.status = 'clear';
     const rank = this.rankFor(st.stageScore);
 
@@ -327,9 +415,9 @@ export class Game {
     this.progress.bestScore = Math.max(this.progress.bestScore, this.run.score);
     this.save();
     return [{
-      type: 'stageClear', stage: def.stage, stars, rank, perfect, clearBonus, perfectBonus, savedBonus, lifeGain,
+      type: 'stageClear', stage: def.stage, stars, rank, perfect, clearBonus, perfectBonus, savedBonus, hintBonus, lifeGain,
       stageScore: st.stageScore, playScore: st.stageScore - bonusTotal, score: this.run.score,
-      addsUsed: st.addsUsed, addsLeft: st.addsLeft,
+      addsUsed: st.addsUsed, addsLeft: st.addsLeft, hintsLeft: st.hintsLeft,
       isLast: this.run.stageIndex + 1 >= this.stages.length,
     }];
   }
@@ -354,7 +442,7 @@ export class Game {
     this.run.score -= lost;
     this.progress.attempts[def.stage] = (this.progress.attempts[def.stage] ?? 0) + 1;
     st.stageScore = 0;
-    st.fever = null;
+    st.fever = null; st.scope = null; st.flashUntil = null;
     if (this.run.lives <= 0) {
       st.status = 'runOver';
       this.progress.bestScore = Math.max(this.progress.bestScore, this.run.score);

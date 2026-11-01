@@ -2,12 +2,13 @@
 // 方針: 耳に刺さる矩形波は使わず、三角波・正弦波に短い減衰をつけた「楽器っぽい」音にする。
 // 消したときの音はペンタトニック(ド レ ミ ソ ラ)をチェーン数で上っていくので、連鎖が旋律になる。
 
-const PENTA = [0, 2, 4, 7, 9];               // 半音の並び(C メジャー・ペンタトニック)
-const C4 = 261.63;
+// 長音階(ドレミファソラシド)。Chain が 1 つ上がるごとに 1 音上がり、8 連鎖で 1 オクターブ上のドに戻る。
+const MAJOR = [0, 2, 4, 5, 7, 9, 11];        // 半音の並び(C メジャー)
+const C4 = 261.6256;                          // 中央のド(A4 = 440 Hz の平均律)
 
 function noteFreq(index) {
-  const octave = Math.floor(index / PENTA.length);
-  const semi = PENTA[index % PENTA.length] + 12 * octave;
+  const octave = Math.floor(index / MAJOR.length);
+  const semi = MAJOR[((index % MAJOR.length) + MAJOR.length) % MAJOR.length] + 12 * octave;
   return C4 * Math.pow(2, semi / 12);
 }
 
@@ -80,17 +81,17 @@ export class Sound {
 
   // 消した: チェーン数で音階を上る。2 音重ねて厚みを出す。
   remove(chain, heat = 0) {
-    const idx = Math.min(chain - 1, 14);
+    const idx = Math.min(chain - 1, 14);               // ド(1 連鎖)から 2 オクターブ上のド(15 連鎖)まで
     const f = noteFreq(idx);
     this.tone(f, { type: 'triangle', dur: 0.32, gain: 0.5, lowpass: 3000 + heat * 3000 });
-    this.tone(f * 2, { type: 'sine', dur: 0.18, gain: 0.16 });
-    this.noise({ dur: 0.08, gain: 0.08, from: 1500, to: 600 });
+    this.tone(f * 2, { type: 'sine', dur: 0.18, gain: 0.12 });
+    this.noise({ dur: 0.05, gain: 0.05, from: 1500, to: 600 });
   }
 
   // 行が消えた: 和音をアルペジオで。連続(streak)で消すほど構成音が増え、音域も上がる
   rowClear(count = 1, streak = 0) {
-    const base = 4 + Math.min(count, 3) * 2 + Math.min(streak, 4);
-    const voicing = [0, 1, 2, 4, 5, 7, 9].slice(0, 4 + Math.min(streak, 3));
+    const base = 7 + Math.min(count, 3) + Math.min(streak, 4);        // 1 オクターブ上のドから
+    const voicing = [0, 2, 4, 7, 9, 11, 14].slice(0, 4 + Math.min(streak, 3));   // ド ミ ソ ド' (ラ シ ミ')
     voicing.forEach((k, n) => {
       this.tone(noteFreq(base + k), { type: 'triangle', dur: 0.55 + streak * 0.05, gain: 0.42, when: n * 0.045 });
       if (streak >= 2) this.tone(noteFreq(base + k) / 2, { type: 'sine', dur: 0.6, gain: 0.18, when: n * 0.045 });
@@ -102,11 +103,11 @@ export class Sound {
   chainDecay() { this.tone(noteFreq(1) / 2, { type: 'sine', dur: 0.15, gain: 0.14, lowpass: 900 }); }
 
   feverStart() {
-    [0, 4, 7, 12, 16, 19, 24].forEach((k, n) => this.tone(noteFreq(5) * Math.pow(2, k / 12), { type: 'triangle', dur: 0.5, gain: 0.35, when: n * 0.06 }));
+    [0, 2, 4, 7, 9, 11, 14].forEach((k, n) => this.tone(noteFreq(7 + k), { type: 'triangle', dur: 0.5, gain: 0.35, when: n * 0.06 }));
     this.noise({ dur: 0.8, gain: 0.25, from: 200, to: 4000 });
   }
   feverEnd() {
-    [7, 4, 0].forEach((k, n) => this.tone(noteFreq(8) * Math.pow(2, k / 12), { type: 'sine', dur: 0.4, gain: 0.25, when: n * 0.12 }));
+    [11, 9, 7].forEach((k, n) => this.tone(noteFreq(k), { type: 'sine', dur: 0.4, gain: 0.25, when: n * 0.12 }));
   }
   giveUp() { [5, 3].forEach((k, n) => this.tone(noteFreq(k), { type: 'triangle', dur: 0.5, gain: 0.3, when: n * 0.2, lowpass: 1200 })); }
 
@@ -114,6 +115,9 @@ export class Sound {
 
   add() { this.noise({ dur: 0.45, gain: 0.25, from: 200, to: 1800 }); this.tone(noteFreq(2), { type: 'sine', dur: 0.3, gain: 0.2, when: 0.1 }); }
 
+  flash() { [7, 9, 11, 14].forEach((k, n) => this.tone(noteFreq(k), { type: 'sine', dur: 0.12, gain: 0.22, when: n * 0.05 })); }
+  scope() { this.tone(noteFreq(14), { type: 'sine', dur: 0.5, gain: 0.25 }); this.tone(noteFreq(14) * 1.5, { type: 'sine', dur: 0.5, gain: 0.12, when: 0.1 }); }
+  scopeMiss() { this.tone(noteFreq(0) / 2, { type: 'triangle', dur: 0.25, gain: 0.3, lowpass: 700 }); }
   hint() { this.tone(noteFreq(7), { type: 'sine', dur: 0.2, gain: 0.25 }); this.tone(noteFreq(9), { type: 'sine', dur: 0.3, gain: 0.25, when: 0.12 }); }
 
   stageClear() {

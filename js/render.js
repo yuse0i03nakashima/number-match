@@ -34,8 +34,10 @@ export class Renderer {
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
 
-  // Board 全体を作り直す。selected / hintPair の見た目もここで付ける。
-  renderBoard(board, { selected = null, hintPair = null, addedFrom = null } = {}) {
+  // Board 全体を作り直す。selected / hintPair / flash / scope の見た目もここで付ける。
+  renderBoard(board, { selected = null, hintPair = null, flashPairs = null, scopeTile = null, addedFrom = null } = {}) {
+    const flashSet = new Set();
+    if (flashPairs) for (const [a, b] of flashPairs) { flashSet.add(a); flashSet.add(b); }
     const frag = document.createDocumentFragment();
     board.forEach((c, p) => {
       const el = document.createElement('button');
@@ -47,6 +49,8 @@ export class Renderer {
       if (c === 0) el.tabIndex = -1;
       if (selected === p) el.classList.add('selected');
       if (hintPair && (hintPair[0] === p || hintPair[1] === p)) el.classList.add('hint');
+      if (flashSet.has(p)) el.classList.add('flash');
+      if (scopeTile === p) el.classList.add('scope');
       if (addedFrom !== null && p >= addedFrom) {
         el.classList.add('added');
         el.style.animationDelay = `${Math.min(0.6, (p - addedFrom) * 0.012)}s`;
@@ -109,6 +113,21 @@ export class Renderer {
     this.renderFever(game, now);
     this.renderLives(run.lives, game.cfg.lives.max);
     this.renderAddButton(st.addsLeft, def.adds);
+    this.renderHintButton(game);
+  }
+
+  // HINT ボタン。Chain 倍率で HINT / FLASH / SCOPE に変わり、残り使用回数を点で示す
+  renderHintButton(game) {
+    const st = game.stage, tier = game.hintTier;
+    const btn = this.$('btn-hint'), label = this.$('btn-hint-label'), sub = this.$('btn-hint-sub');
+    btn.classList.remove('tier-hint', 'tier-flash', 'tier-scope');
+    btn.classList.add(`tier-${tier}`);
+    label.textContent = tier.toUpperCase();
+    if (game.inFever) { sub.textContent = `FEVER 時間 −${game.cfg.fever.hintTimeCostMs / 1000} 秒`; btn.disabled = false; return; }
+    const dots = [];
+    for (let k = 0; k < game.cfg.hint.perStage; k++) dots.push(`<span class="dot${k < st.hintsLeft ? '' : ' off'}"></span>`);
+    sub.innerHTML = `<span class="stock">${dots.join('')}</span>`;
+    btn.disabled = st.hintsLeft <= 0;
   }
 
   // Chain ゲージ(時間で減る)。満タンから空になるまでの残り
