@@ -10,3 +10,5 @@ Thumbs.db
 _work/
 # yomiyasu の検査記録
 .yomiyasu/
+# 参考の音源(加工前)はリポジトリに入れない
+/*.mp3
