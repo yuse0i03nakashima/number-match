@@ -1,31 +1,47 @@
 // 調整値をここに集約する。遊んで「派手すぎる」「ぬるい」と感じたらこのファイルだけ直す。
 export const CONFIG = {
   score: {
-    pairBase: 10,          // 1 Pair 消すごとの基礎点(Bonus を足してから倍率を掛ける)
-    rowClear: 100,         // 行が消えたとき: rowClear × (同時に消えた行数)^2 × 倍率
+    pairBase: 10,          // 1 Pair の基礎点。得点 = 基礎点 × 難しさ倍率 × Chain 倍率 × Speed 倍率(× FEVER)
+    rowClear: 100,         // 行が消えたとき: rowClear × (同時に消えた行数)^2 × Chain 倍率
     stageClear: 200,       // Stage Clear
     perfect: 500,          // Add なしで Clear
     addSaved: 150,         // Clear 時、使わずに残した Add 1 回ごと(温存 Bonus)
-    // 難しい消し方の Bonus(基礎点に足す)
-    gapPerCell: 5,         // 2 つの間にある空マス 1 つごと(他を消して初めて通った道)
-    wrap: 15,              // 行の右端と次の行の左端をまたぐ
-    diagonal: 10,          // 斜め
-    diagonalGapPerCell: 10, // 斜めで離れている: 間の空マス 1 つごとにさらに加点(見つけにくい)
-    vertical: 5,           // 縦
+    hintSaved: 50,         // Clear 時、使わずに残した Hint 1 回ごと
+    hintedPairRatio: 0.5,  // HINT(低倍率)で示された Pair を消したときの得点の割合
     hintWhenStuck: 100,    // Pair が残っていないのに Hint を押したときの減点(Add が残っているとき)
     blindHintPenalty: 300, // Add も無いのに Hint を押したとき、Stage 得点を全部失ったうえで引かれる点
     giveUpKeepRatio: 0.5,  // GIVE UP したとき残る Stage 得点の割合
   },
+  // 難しい消し方の倍率(Pair の得点に掛ける)
+  difficulty: {
+    vertical: 1.2,         // 縦
+    wrap: 1.5,             // 行の右端と次の行の左端をまたぐ
+    diagonal: 1.5,         // 斜め
+    gapPerCell: 0.25,      // 2 つの間にある空マス 1 つごとに +0.25(他を消して初めて通った道)
+    diagonalGapPerCell: 0.5, // 斜めで離れているときは空マス 1 つごとに +0.5(見つけにくい)
+  },
   chain: {
-    step: 0.5,             // 1 Pair 消すごとに倍率 +0.5
-    max: 10.0,             // 倍率の上限(18 連鎖で到達)。到達すると FEVER
-    decayGraceMs: 4000,    // 消去してからこの時間は倍率が下がらない
-    decayStepMs: 1500,     // 猶予のあと、この時間ごとに Chain が 1 ずつ減る
+    step: 1.0,             // 1 Pair 消すごとに倍率 +1.0
+    max: 10.0,             // 倍率の上限(9 連鎖で到達)。到達すると FEVER
+    decayGraceMs: 6000,    // 消去してからこの時間は倍率が下がらない
+    decayStepMs: 2500,     // 猶予のあと、この時間ごとに Chain が 1 ずつ減る
   },
   fever: {
     durationMs: 10000,     // FEVER の長さ
     pointMult: 2,          // FEVER 中は得点 ×2
     endChainRatio: 0.5,    // FEVER が終わったら Chain をこの割合に戻す
+    hintTimeCostMs: 3000,  // FEVER 中の Hint は使用回数ではなく FEVER の残り時間で払う
+  },
+  // Hint は Chain 倍率で性格が変わる(3 段階)
+  hint: {
+    perStage: 3,           // Stage ごとの使用上限
+    flashFrom: 4.0,        // この倍率以上は FLASH(消せる Pair を全部一瞬だけ光らせる)
+    scopeFrom: 8.0,        // この倍率以上(と FEVER 中)は SCOPE(相手のいるタイルを 1 枚光らせる)
+    flashMs: 1200,         // FLASH の表示時間
+    flashGaugeRatio: 0.5,  // FLASH のあとゲージをこの割合まで減らす
+    scopeMissChain: 3,     // SCOPE で相手を外した 1 回目: Chain −3
+    scopeBreakRatio: 0.5,  // 2 回目に外した / 光ったタイルを使わず別の Pair を消した: Chain をこの割合に
+    stuckKeepRatio: 0.5,   // Dead End なのに Hint を押した: Chain をこの割合に
   },
   speed: {
     fastMs: 1000,          // 前の消去から 1 秒以内: FAST
@@ -34,10 +50,10 @@ export const CONFIG = {
     quickMult: 1.2,
   },
   stuck: {
-    addKeepRatio: 0.5,     // 詰んでから Add を押したとき、Chain をこの割合だけ残す(0 なら途切れる)
+    addKeepRatio: 0.5,     // Dead End になってから Add を押したとき、Chain をこの割合だけ残す
   },
   rank: {
-    perCell: 50,           // 基準点 = マス数 × perCell。Stage 得点がその何倍かで Rank
+    perCell: 100,          // 基準点 = マス数 × perCell。Stage 得点がその何倍かで Rank
     S: 2.0, A: 1.4, B: 0.9, // これ未満は C
   },
   lives: {

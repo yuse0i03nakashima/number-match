@@ -7,7 +7,7 @@ import { Game } from './game.js';
 import { Renderer } from './render.js';
 import { FX, heatColor, PALETTE } from './fx.js';
 import { Sound, vibrate } from './audio.js';
-import { WIDTH } from './rules.js';
+import { WIDTH, validPairs } from './rules.js';
 
 const fmt = (n) => n.toLocaleString('en-US');
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -29,7 +29,8 @@ async function boot() {
   function redraw(opts = {}) {
     const st = game.stage;
     if (!st) return;
-    ui.renderBoard(st.board, { selected: st.selected, hintPair: st.hintPair, ...opts });
+    const flashPairs = st.flashUntil !== null && Date.now() < st.flashUntil ? validPairs(st.board) : null;
+    ui.renderBoard(st.board, { selected: st.selected, hintPair: st.hintPair, flashPairs, scopeTile: st.scope?.tile ?? null, ...opts });
     ui.renderHud(game);
   }
   function soundLabel() {
@@ -95,17 +96,43 @@ async function boot() {
           break;
         }
         case 'noAdds': ui.toast('Add はもう使えない'); sound.invalid(); break;
+        case 'noHints': ui.toast('Hint の使用上限に達した'); sound.invalid(); break;
         case 'noHint': {
-          // Pair が残っていないのに Hint を押した
+          // Pair が残っていないのに Hint を押した(Dead End)
           lineStreak = 0;
           redraw();
-          if (ev.blind) {
-            ui.toast(`Pair はもう無く、Add も無かった… −${fmt(ev.penalty)}`, 3000);
-          } else {
-            ui.toast(`Pair はもう無い… −${ev.penalty}　Add で数字を足そう`, 2600);
-          }
+          if (ev.blind) ui.toast(`Pair はもう無く、Add も無かった… −${fmt(ev.penalty)}`, 3000);
+          else ui.toast(`Pair はもう無い… −${ev.penalty}、Chain ×${ev.mult.toFixed(1)}　Add で数字を足そう`, 2800);
           fx.flash('rgba(239,68,68,0.15)');
           sound.stuck(); vibrate([30, 30, 30]);
+          break;
+        }
+        case 'flash': {
+          sound.flash();
+          redraw({ flashPairs: ev.pairs });
+          for (const [a, b] of ev.pairs) { const ca = ui.cellCenter(a), cb = ui.cellCenter(b); if (ca && cb) fx.flashLine(ca.x, ca.y, cb.x, cb.y, PALETTE.amber, 2); }
+          ui.toast(`FLASH: 消せる Pair ${ev.pairs.length} 組`, CONFIG.hint.flashMs);
+          break;
+        }
+        case 'flashEnd': redraw(); break;
+        case 'scope': {
+          sound.scope();
+          redraw();
+          const c = ui.cellCenter(ev.tile);
+          if (c) { fx.ring(c.x, c.y, PALETTE.red, 70); fx.burst(c.x, c.y, { color: PALETTE.red, count: 16, power: 0.6 }); }
+          ui.toast(`SCOPE: このタイルの相手を探せ(残り Pair ${ev.remaining})`, 2600);
+          break;
+        }
+        case 'scopeMiss': {
+          sound.scopeMiss(); vibrate([40, 30, 40]);
+          fx.flash('rgba(239,68,68,0.2)');
+          ui.renderHud(game);
+          ui.toast(ev.misses === 1 ? `外した… Chain −${CONFIG.hint.scopeMissChain} (×${ev.mult.toFixed(1)})` : `2 回目… Chain 半分 (×${ev.mult.toFixed(1)})、SCOPE 終了`, 2200);
+          break;
+        }
+        case 'scopeEnd': {
+          if (ev.reason === 'ignored') ui.toast(`光ったタイルを使わなかった… Chain 半分 (×${ev.mult.toFixed(1)})`, 2400);
+          redraw();
           break;
         }
         case 'add': {
@@ -122,10 +149,9 @@ async function boot() {
           break;
         }
         case 'hint': {
-          lineStreak = 0;
           sound.hint();
           redraw();
-          if (ev.brokeChain) ui.toast('Hint: Chain が途切れた ×1.0');
+          ui.toast('HINT: この Pair は得点半分、Chain は維持', 2000);
           const c = ui.cellCenter(ev.pair[0]);
           if (c) fx.ring(c.x, c.y, PALETTE.amber, 50);
           break;
@@ -165,12 +191,13 @@ async function boot() {
       if (ev.heat > 0.5 || speedBoost > 0 || feverBoost) fx.ring(mx, my, color, 40 + ev.heat * 60 + speedBoost * 30 + feverBoost * 40);
       const target = ui.scoreCenter();
       fx.flyText(mx, my, target.x, target.y, `+${ev.pairPoints}`, { color, size: 18 + ev.heat * 10 + speedBoost * 4 + feverBoost * 6, dur: 0.5 });
-      // 難しい道・速さのラベル
+      // 難しい道・速さのラベル(難しさは倍率で表示)
       const labels = [...ev.labels];
+      if (ev.diffMult > 1) labels.unshift(`×${ev.diffMult.toFixed(2).replace(/0$/, '')}`);
       if (ev.speed === 'fast') labels.push('FAST!!');
       else if (ev.speed === 'quick') labels.push('QUICK');
       labels.forEach((text, k) => {
-        const lc = text === 'FAST!!' ? PALETTE.rose : text === 'QUICK' ? PALETTE.amber : text === 'LONG SHOT' || text === 'DIAGONAL SNIPE' ? PALETTE.purple : PALETTE.green;
+        const lc = text === 'FAST!!' ? PALETTE.rose : text === 'QUICK' ? PALETTE.amber : text === 'LONG SHOT' || text === 'DIAGONAL SNIPE' ? PALETTE.purple : text === 'SCOPE' || text === 'HINTED' ? PALETTE.red : text.startsWith('×') ? PALETTE.white : PALETTE.green;
         fx.floatText(mx, my - 36 - k * 22, text, { color: lc, size: 15 + (text === 'FAST!!' ? 4 : 0), dy: -45, life: 1.1 });
       });
       if (ev.chain >= 5 && ev.chain % 5 === 0) {
@@ -252,6 +279,7 @@ async function boot() {
         <div class="row"><span class="k">Clear Bonus</span><span class="v plus">+${fmt(ev.clearBonus)}</span></div>
         ${ev.perfect ? `<div class="row"><span class="k">Perfect Bonus</span><span class="v plus">+${fmt(ev.perfectBonus)}</span></div>` : ''}
         ${ev.savedBonus ? `<div class="row"><span class="k">Add 温存 Bonus(${ev.addsLeft} 回)</span><span class="v plus">+${fmt(ev.savedBonus)}</span></div>` : ''}
+        ${ev.hintBonus ? `<div class="row"><span class="k">Hint 温存 Bonus(${ev.hintsLeft} 回)</span><span class="v plus">+${fmt(ev.hintBonus)}</span></div>` : ''}
         ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
         <div class="row"><span class="k">Add の使用</span><span class="v">${ev.addsUsed} 回</span></div>
         <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
@@ -392,7 +420,7 @@ async function boot() {
   }
 
   function showRules() {
-    const c = CONFIG;
+    const c = CONFIG, d = c.difficulty, h = c.hint;
     const card = ui.showOverlay(`
       <div class="eyebrow">how to play</div>
       <h1>How to Play</h1>
@@ -402,18 +430,21 @@ async function boot() {
         ・縦・横・斜めの一直線上に並んでいて、2 つの間が全部空マス(隣どうしも含む)。<br>
         ・順番(左から右、上から下)で続いていて、間が全部空マス。行の右端と次の行の左端も続きとみなす。<br>
         <b>消し方</b>: 1 つ目の数字をタップし、2 つ目をタップする。Pair でなければ 2 つ目が選び直しになる。<br>
-        <b>Score</b>: 1 Pair ${c.score.pairBase} 点が基本。<span class="ex">難しい消し方</span>ほど加点: 間の空マス 1 つごとに +${c.score.gapPerCell}(他を消して初めて可能になる消し方)、行をまたぐと +${c.score.wrap}、斜めは +${c.score.diagonal}、縦は +${c.score.vertical}。離れた斜めは見つけにくいので、空マス 1 つごとにさらに +${c.score.diagonalGapPerCell}。<br>
-        <b>Chain</b>: ペアを消すたびに Score の倍率が +${c.chain.step}(最大 ×${c.chain.max})される。Add か Hint を使うとChainが途切れて倍率が ×1.0 に戻る。${c.chain.decayGraceMs / 1000} 秒消さないでいると、${c.chain.decayStepMs / 1000} 秒ごとに 1 ゲージずつ減る。<br>
+        <b>Score</b>: 1 Pair の得点 = ${c.score.pairBase} 点 × 難しさ倍率 × Chain 倍率 × Speed 倍率。難しさ倍率は、横の隣どうし ×1.0、縦 ×${d.vertical}、行をまたぐ ×${d.wrap}、斜め ×${d.diagonal}。2 つの間の空マス 1 つごとに +${d.gapPerCell}(他を消して初めて可能になる消し方)、斜めなら +${d.diagonalGapPerCell}。<br>
+        <b>Chain</b>: Pair を消すたびに Chain 倍率が +${c.chain.step}(最大 ×${c.chain.max})。Add を使うと途切れて ×1.0 に戻る。${c.chain.decayGraceMs / 1000} 秒消さないでいると、${c.chain.decayStepMs / 1000} 秒ごとに 1 段階ずつ減る(ゲージ)。<br>
         <b>FEVER</b>: 倍率が ×${c.chain.max} に達すると ${c.fever.durationMs / 1000} 秒間 Score ×${c.fever.pointMult}。その間 Chain は減らない。終わると Chain は半分になる。<br>
         <b>Speed</b>: 前の消去から ${c.speed.quickMs / 1000} 秒以内なら QUICK(×${c.speed.quickMult})、${c.speed.fastMs / 1000} 秒以内なら FAST(×${c.speed.fastMult})。<br>
         <b>Line</b>: 1 行まるごと空になるとその行が Board から消え、${c.score.rowClear} 点 × (同時に消えた行数の 2 乗) × Chain 倍率が加算される。<br>
         <b>Add</b>: Board に残っている数字と同じ数字を末尾に書き足す。並びは、足したあとの Board が Add なしで全消しできることを確かめたうえで選ぶ(確かめられないときは残っている順)。使える回数は Stage ごとに決まっている。<br>
-        <b>Hint</b>: 消せる Pair を 1 つ光らせる。Chain は途切れる。<br>
-        <b>Dead End</b>: 消せる Pair が無くなってもゲームは明示しない。Dead End になってから Add を押せば Chain は半分保持される。Dead End なのに Hint を押すと、Chainが途切れるうえに −${c.score.hintWhenStuck} 点。<br>
-        <b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP になる。押すと Heart −1 だが、Stage 得点の半分は残る。それに気づかず Hint を押すと Heart −1で、Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。<br>
+        <b>Hint</b>(使用上限 Stage ごとに ${h.perStage} 回。Chain 倍率で中身が変わる):<br>
+        ・<span class="ex">HINT</span>(×1.0〜): 消せる Pair を 1 組示す。その Pair は得点 ${c.score.hintedPairRatio * 100}%、Chain は維持(増えない)。<br>
+        ・<span class="ex">FLASH</span>(×${h.flashFrom} 以上): 消せる Pair を全部 ${h.flashMs / 1000} 秒だけ光らせる。ゲージが半分になる。消した Pair は全て獲得。<br>
+        ・<span class="ex">SCOPE</span>(×${h.scopeFrom} 以上と FEVER 中): 相手のいるタイルを 1 枚光らせ、残り Pair 数を示す。相手は自分で探す。光ったタイルを含む Pair を消せば全て獲得(Chain は維持、Speed なし)。相手を外すと 1 回目 Chain −${h.scopeMissChain}、2 回目で Chain 半分。光ったタイルを使わず別の Pair を消しても Chain 半分。FEVER 中は使用回数の代わりに FEVER 時間 −${c.fever.hintTimeCostMs / 1000} 秒。<br>
+        <b>Dead End</b>: 消せる Pair が無くなってもゲームは明示しない。Dead End になってから Add を押せば Chain は半分保持される。Dead End なのに Hint を押すと、使用回数 1 と Chain 半分、−${c.score.hintWhenStuck} 点。<br>
+        <b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP になる。押すと Heart −1 だが、Stage 得点の半分は獲得できる。それに気づかず Hint を押すと Heart −1 で、Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。<br>
         <b>Heart</b>: 3 つ。尽きると Run は終わり、World のはじめから再開。<br>
-        <b>Clear</b>: Clear Bonus +${c.score.stageClear}。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
-        <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。<br>
+        <b>Clear</b>: Clear Bonus +${c.score.stageClear}。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}、残した Hint 1 回ごとに +${c.score.hintSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
+        <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
     card.querySelector('#ov-back').onclick = showTitle;

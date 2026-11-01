@@ -210,6 +210,15 @@ body.fever .hud, body.fever .controls { border-color:rgba(240,98,146,0.5); }
 .ctl-primary .ctl-sub { color:rgba(12,13,17,0.7); }
 .ctl-primary:disabled { background:var(--surface); border-color:var(--border); }
 .ctl-primary:disabled .ctl-label { color:var(--text-dim); }
+.ctl.tier-hint .ctl-label { color:var(--blue); }
+.ctl.tier-flash { border-color:var(--amber); } .ctl.tier-flash .ctl-label { color:var(--amber); }
+.ctl.tier-scope { border-color:var(--red); animation:scope-glow 1s ease-in-out infinite alternate; } .ctl.tier-scope .ctl-label { color:var(--red); }
+@keyframes scope-glow { 0%{box-shadow:0 0 0 0 rgba(239,68,68,0)} 100%{box-shadow:0 0 12px 0 rgba(239,68,68,0.45)} }
+.ctl .stock .dot { background:var(--text-muted); } .ctl .stock .dot.off { background:var(--border-light); }
+.cell.flash { animation:flash-cell 0.3s ease-in-out infinite alternate; border-color:var(--amber); color:var(--amber); }
+@keyframes flash-cell { 0%{box-shadow:0 0 0 0 rgba(245,166,35,0.2); background:var(--surface)} 100%{box-shadow:0 0 14px 2px rgba(245,166,35,0.55); background:var(--surface3)} }
+.cell.scope { animation:scope-cell 0.7s ease-in-out infinite alternate; border-color:var(--red); color:var(--red); }
+@keyframes scope-cell { 0%{box-shadow:0 0 0 0 rgba(239,68,68,0.2)} 100%{box-shadow:0 0 16px 3px rgba(239,68,68,0.6)} }
 .ctl-danger { background:var(--surface); border-color:var(--red); }
 .ctl-danger .ctl-label { color:var(--red); }
 .ctl-danger .ctl-sub { color:var(--text-dim); }
