@@ -27,9 +27,9 @@
   --font-ja:'Noto Serif JP', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
   --font-mono:'DM Mono', 'SFMono-Regular', Consolas, monospace;
 
-  --gutter:16px;
-  --cell-gap:6px;
-  --cell:44px;                      /* JS が画面幅から再計算 */
+  --gutter:12px;
+  --cell-gap:4px;
+  --cell:48px;                      /* JS が画面幅から再計算 */
   color-scheme:dark;
 }
 
@@ -131,7 +131,7 @@ body::after {
 .cell {
   appearance:none; border:1px solid var(--border); background:var(--surface);
   color:var(--text); font-family:var(--font-mono); font-weight:500;
-  font-size:calc(var(--cell) * 0.46); line-height:1;
+  font-size:calc(var(--cell) * 0.62); line-height:1;
   display:flex; align-items:center; justify-content:center;
   cursor:pointer; position:relative;
   transition:background 0.15s, border-color 0.15s, transform 0.12s, color 0.15s, opacity 0.2s;

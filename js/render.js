@@ -14,11 +14,12 @@ export class Renderer {
     addEventListener('resize', () => this.fitCells());
   }
 
-  // 画面幅から 1 マスの大きさを決める(9 列が収まる最大、ただし 48px まで)
+  // 画面幅から 1 マスの大きさを決める(9 列が収まる最大、ただし 56px まで)
+  // 数字の大きさはマスの 62%(style.css)。幅 390px のスマホならマス 37px・数字 23px になる。
   fitCells() {
-    const gutter = 16 * 2, gap = 6 * (WIDTH - 1);
+    const gutter = 12 * 2, gap = 4 * (WIDTH - 1);
     const avail = Math.min(innerWidth, 520) - gutter - gap;
-    const size = Math.max(28, Math.min(48, Math.floor(avail / WIDTH)));
+    const size = Math.max(30, Math.min(56, Math.floor(avail / WIDTH)));
     document.documentElement.style.setProperty('--cell', size + 'px');
   }
 
