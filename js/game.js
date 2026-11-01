@@ -132,7 +132,7 @@ export class Game {
     if (isCleared(st.board)) return this.stageClear();
     if (validPairs(st.board).length > 0) return [];
     if (st.addsLeft > 0) return [{ type: 'stuck', addsLeft: st.addsLeft }];
-    return this.stageFailed();
+    return this.stageFailed('stuck');
   }
 
   useAdd() {
@@ -170,7 +170,7 @@ export class Game {
   giveUp() {
     const st = this.stage;
     if (!st || st.status !== 'play') return [];
-    const events = this.stageFailed();
+    const events = this.stageFailed('giveUp');
     this.save();
     return events;
   }
@@ -210,7 +210,7 @@ export class Game {
     return this.startStage();
   }
 
-  stageFailed() {
+  stageFailed(reason = 'stuck') {
     const st = this.stage, def = this.stageDef;
     this.run.lives -= 1;
     this.run.score -= st.stageScore;     // そのステージの得点は消える
@@ -221,12 +221,12 @@ export class Game {
       st.status = 'runOver';
       this.progress.bestScore = Math.max(this.progress.bestScore, this.run.score);
       this.save();
-      return [{ type: 'runOver', score: this.run.score, best: this.progress.bestScore, lost,
+      return [{ type: 'runOver', reason, score: this.run.score, best: this.progress.bestScore, lost,
                 resumeStage: this.worldStart(this.run.stageIndex), stage: def.stage }];
     }
     st.status = 'failed';
     this.save();
-    return [{ type: 'stageFailed', lives: this.run.lives, lost, stage: def.stage }];
+    return [{ type: 'stageFailed', reason, lives: this.run.lives, lost, stage: def.stage }];
   }
 
   retryStage() {
