@@ -15,8 +15,9 @@
 //
 // 時間: tap と tick は現在時刻(ミリ秒)を受け取る。Chain は時間で減り(ゲージ)、FEVER は時間で終わる。
 
-import { validPairs, removePair, collapseRows, addNumbers, isCleared, matches, connected, rows } from './rules.js';
+import { validPairs, removePair, collapseRows, isCleared, matches, connected, rows } from './rules.js';
 import { pathInfo, difficultyBonus, speedTier } from './scoring.js';
+import { chooseAddition } from './solver.js';
 
 const RANKS = ['C', 'B', 'A', 'S'];
 const rankIndex = (r) => RANKS.indexOf(r);
@@ -235,7 +236,9 @@ export class Game {
     const stuck = this.isStuck;
     const oldLength = st.board.length;
     const chainBefore = st.chain;
-    st.board = addNumbers(st.board);
+    // 足す数字は残っている数字そのもの(本家と同じ)。並びは「Add なしで全消しできる」と確かめられたものを選ぶ
+    const added = chooseAddition(st.board);
+    st.board = added.board;
     st.addsLeft -= 1;
     st.addsUsed += 1;
     // 詰んでからの Add は仕方ないので控えめ(Chain を一部残す)。Pair が残っていたのに押すと途切れる
@@ -246,6 +249,7 @@ export class Game {
     st.decayed = 0;
     const events = [{
       type: 'add', oldLength, newLength: st.board.length, addsLeft: st.addsLeft, board: st.board,
+      arrangement: added.arrangement, solvable: added.checked && added.arrangement !== 'fallback',
       stuckBefore: stuck, chainBefore, chainAfter: st.chain,
       multBefore: this.multiplierFor(chainBefore), multAfter: this.multiplier,
     }];

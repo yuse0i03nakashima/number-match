@@ -33,7 +33,7 @@ test('difficultyBonus: 間の空マス・またぎ・斜めで加点、ラベル
   assert.deepEqual(difficultyBonus(S, { kind: 'line', gap: 2 }), { bonus: 2 * S.gapPerCell, labels: ['OPENED'] });
   assert.deepEqual(difficultyBonus(S, { kind: 'line', gap: 3 }), { bonus: 3 * S.gapPerCell, labels: ['LONG SHOT'] });
   assert.deepEqual(difficultyBonus(S, { kind: 'wrap', gap: 0 }), { bonus: S.wrap, labels: ['WRAP'] });
-  assert.deepEqual(difficultyBonus(S, { kind: 'diagonal', gap: 1 }), { bonus: S.gapPerCell + S.diagonal, labels: ['OPENED', 'DIAGONAL'] });
+  assert.deepEqual(difficultyBonus(S, { kind: 'diagonal', gap: 1 }), { bonus: S.gapPerCell + S.diagonal + S.diagonalGapPerCell, labels: ['OPENED', 'DIAGONAL SNIPE'] });
   assert.deepEqual(difficultyBonus(S, { kind: 'vertical', gap: 0 }), { bonus: S.vertical, labels: [] });
 });
 
@@ -42,4 +42,10 @@ test('speedTier: 速いほど倍率が高い', () => {
   assert.deepEqual(speedTier(CONFIG.speed, 1500), { tier: 'quick', mult: CONFIG.speed.quickMult });
   assert.deepEqual(speedTier(CONFIG.speed, 5000), { tier: null, mult: 1 });
   assert.deepEqual(speedTier(CONFIG.speed, Infinity), { tier: null, mult: 1 });
+});
+
+test('difficultyBonus: 離れた斜めは空マスごとにさらに加点', () => {
+  assert.deepEqual(difficultyBonus(S, { kind: 'diagonal', gap: 0 }), { bonus: S.diagonal, labels: ['DIAGONAL'] });
+  assert.deepEqual(difficultyBonus(S, { kind: 'diagonal', gap: 2 }),
+    { bonus: 2 * S.gapPerCell + S.diagonal + 2 * S.diagonalGapPerCell, labels: ['OPENED', 'DIAGONAL SNIPE'] });
 });

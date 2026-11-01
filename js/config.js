@@ -10,6 +10,7 @@ export const CONFIG = {
     gapPerCell: 5,         // 2 つの間にある空マス 1 つごと(他を消して初めて通った道)
     wrap: 15,              // 行の右端と次の行の左端をまたぐ
     diagonal: 10,          // 斜め
+    diagonalGapPerCell: 10, // 斜めで離れている: 間の空マス 1 つごとにさらに加点(見つけにくい)
     vertical: 5,           // 縦
     hintWhenStuck: 100,    // Pair が残っていないのに Hint を押したときの減点(Add が残っているとき)
     blindHintPenalty: 300, // Add も無いのに Hint を押したとき、Stage 得点を全部失ったうえで引かれる点
