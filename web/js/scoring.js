@@ -53,7 +53,12 @@ export function difficultyBonus(scoreCfg, info) {
     labels.push(info.gap >= 3 ? 'LONG SHOT' : 'OPENED');   // 他を消して初めて通った道
   }
   if (info.kind === 'wrap') { bonus += scoreCfg.wrap; labels.push('WRAP'); }
-  if (info.kind === 'diagonal') { bonus += scoreCfg.diagonal; labels.push('DIAGONAL'); }
+  if (info.kind === 'diagonal') {
+    bonus += scoreCfg.diagonal;
+    // 離れた斜めは見つけにくいので、空マスごとにさらに加点
+    if (info.gap > 0) { bonus += info.gap * scoreCfg.diagonalGapPerCell; labels.push('DIAGONAL SNIPE'); }
+    else labels.push('DIAGONAL');
+  }
   if (info.kind === 'vertical') { bonus += scoreCfg.vertical; }
   return { bonus, labels };
 }

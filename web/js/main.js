@@ -170,7 +170,7 @@ async function boot() {
       if (ev.speed === 'fast') labels.push('FAST!!');
       else if (ev.speed === 'quick') labels.push('QUICK');
       labels.forEach((text, k) => {
-        const lc = text === 'FAST!!' ? PALETTE.rose : text === 'QUICK' ? PALETTE.amber : text === 'LONG SHOT' ? PALETTE.purple : PALETTE.green;
+        const lc = text === 'FAST!!' ? PALETTE.rose : text === 'QUICK' ? PALETTE.amber : text === 'LONG SHOT' || text === 'DIAGONAL SNIPE' ? PALETTE.purple : PALETTE.green;
         fx.floatText(mx, my - 36 - k * 22, text, { color: lc, size: 15 + (text === 'FAST!!' ? 4 : 0), dy: -45, life: 1.1 });
       });
       if (ev.chain >= 5 && ev.chain % 5 === 0) {
@@ -278,9 +278,9 @@ async function boot() {
     await sleep(900);
     const title = ev.reason === 'giveUp' ? 'Give Up' : ev.reason === 'blindHint' ? 'Stuck' : 'Stuck';
     const text = ev.reason === 'giveUp'
-      ? 'Stage をあきらめた。Stage 得点の半分は残る。'
+      ? 'Stage をあきらめた。Stage 得点の半分は獲得できる。'
       : ev.reason === 'blindHint'
-        ? 'Pair は無く Add も無かったのに Hint を押した… Stage 得点を全部失い、さらに減点。'
+        ? '消せる Pair は無く Add も無いのに Hint を押してしまった… '
         : '消せる Pair が無く、Add も残っていない…';
     const card = ui.showOverlay(`
       <div class="eyebrow">stage ${pad2(ev.stage)}</div>
@@ -400,21 +400,20 @@ async function boot() {
         <b>Pair</b> とは、<span class="ex">同じ数字どうし</span>(4 と 4)か、<span class="ex">足して 10 になる 2 つ</span>(3 と 7、1 と 9)のこと。<br>
         <b>消せる Pair</b> は、次のどちらかの位置にある Pair。<br>
         ・縦・横・斜めの一直線上に並んでいて、2 つの間が全部空マス(隣どうしも含む)。<br>
-        ・読む順番(左から右、上から下)で続いていて、間が全部空マス。行の右端と次の行の左端も続きとみなす。<br>
+        ・順番(左から右、上から下)で続いていて、間が全部空マス。行の右端と次の行の左端も続きとみなす。<br>
         <b>消し方</b>: 1 つ目の数字をタップし、2 つ目をタップする。Pair でなければ 2 つ目が選び直しになる。<br>
-        <b>Score</b>: 1 Pair ${c.score.pairBase} 点が基本。<span class="ex">難しい消し方</span>ほど加点: 間の空マス 1 つごとに +${c.score.gapPerCell}(他を消して初めて通った道)、行をまたぐと +${c.score.wrap}、斜めは +${c.score.diagonal}、縦は +${c.score.vertical}。<br>
-        <b>Chain</b>: 消すたびに Score の倍率 +${c.chain.step}(最大 ×${c.chain.max})。Add か Hint を使うと途切れて ×1.0 に戻る。${c.chain.decayGraceMs / 1000} 秒消さないでいると、${c.chain.decayStepMs / 1000} 秒ごとに 1 つずつ減る(ゲージ)。<br>
+        <b>Score</b>: 1 Pair ${c.score.pairBase} 点が基本。<span class="ex">難しい消し方</span>ほど加点: 間の空マス 1 つごとに +${c.score.gapPerCell}(他を消して初めて可能になる消し方)、行をまたぐと +${c.score.wrap}、斜めは +${c.score.diagonal}、縦は +${c.score.vertical}。離れた斜めは見つけにくいので、空マス 1 つごとにさらに +${c.score.diagonalGapPerCell}。<br>
+        <b>Chain</b>: ペアを消すたびに Score の倍率が +${c.chain.step}(最大 ×${c.chain.max})される。Add か Hint を使うとChainが途切れて倍率が ×1.0 に戻る。${c.chain.decayGraceMs / 1000} 秒消さないでいると、${c.chain.decayStepMs / 1000} 秒ごとに 1 ゲージずつ減る。<br>
         <b>FEVER</b>: 倍率が ×${c.chain.max} に達すると ${c.fever.durationMs / 1000} 秒間 Score ×${c.fever.pointMult}。その間 Chain は減らない。終わると Chain は半分になる。<br>
         <b>Speed</b>: 前の消去から ${c.speed.quickMs / 1000} 秒以内なら QUICK(×${c.speed.quickMult})、${c.speed.fastMs / 1000} 秒以内なら FAST(×${c.speed.fastMult})。<br>
-        <b>Line</b>: 1 行まるごと空になるとその行が Board から消え、${c.score.rowClear} 点 × 行数の 2 乗 × 倍率。<br>
-        <b>Add</b>: Board に残っている数字を、読む順番のまま末尾に書き足す。使える回数は Stage ごとに決まっている。<br>
+        <b>Line</b>: 1 行まるごと空になるとその行が Board から消え、${c.score.rowClear} 点 × (同時に消えた行数の 2 乗) × Chain 倍率が加算される。<br>
+        <b>Add</b>: Board に残っている数字と同じ数字を末尾に書き足す。並びは、足したあとの Board が Add なしで全消しできることを確かめたうえで選ぶ(確かめられないときは残っている順)。使える回数は Stage ごとに決まっている。<br>
         <b>Hint</b>: 消せる Pair を 1 つ光らせる。Chain は途切れる。<br>
-        <b>Dead End</b>: 消せる Pair が無くなってもゲームは教えない。Dead End になってから Add を押せば Chain は半分残る。Dead End なのに Hint を押すと、途切れたうえに −${c.score.hintWhenStuck} 点。<br>
-        <b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP になる。押すと Heart −1 だが、Stage 得点の半分は残る。それに気づかず Hint を押すと Heart −1、Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。<br>
+        <b>Dead End</b>: 消せる Pair が無くなってもゲームは明示しない。Dead End になってから Add を押せば Chain は半分保持される。Dead End なのに Hint を押すと、Chainが途切れるうえに −${c.score.hintWhenStuck} 点。<br>
+        <b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP になる。押すと Heart −1 だが、Stage 得点の半分は残る。それに気づかず Hint を押すと Heart −1で、Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。<br>
         <b>Heart</b>: 3 つ。尽きると Run は終わり、World のはじめから再開。<br>
         <b>Clear</b>: Clear Bonus +${c.score.stageClear}。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
         <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。<br>
-        <span class="ex">すべての Board は、Add なしで全消しできることを確認済み。</span>
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
     card.querySelector('#ov-back').onclick = showTitle;
