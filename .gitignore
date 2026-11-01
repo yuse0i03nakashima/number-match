@@ -1,0 +1,10 @@
+# Haskell
+generator/dist-newstyle/
+*.hi
+*.o
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+# scratch
+_work/

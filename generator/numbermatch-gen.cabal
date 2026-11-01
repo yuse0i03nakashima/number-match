@@ -1,0 +1,33 @@
+cabal-version:      3.0
+name:               numbermatch-gen
+version:            0.1.0.0
+synopsis:           Number Match の盤面生成器・ソルバ・ルール参照実装
+build-type:         Simple
+
+common shared
+    default-language: Haskell2010
+    ghc-options:      -Wall -O2
+    build-depends:    base >=4.18 && <5,
+                      containers
+
+library
+    import:           shared
+    hs-source-dirs:   src
+    exposed-modules:  NumberMatch.Board
+                      NumberMatch.Rules
+                      NumberMatch.Solver
+                      NumberMatch.Generate
+                      NumberMatch.Json
+
+executable gen
+    import:           shared
+    hs-source-dirs:   app
+    main-is:          Main.hs
+    build-depends:    numbermatch-gen
+
+test-suite spec
+    import:           shared
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Spec.hs
+    build-depends:    numbermatch-gen
