@@ -15,26 +15,43 @@
 //   setInterval で 50ms ごとに起き、AudioContext の時計で 0.2 秒先までの音を予約する。
 //   JavaScript のタイマーのゆれが音のタイミングに出ない。
 
-const BPM = 124;
-const STEP = 60 / BPM / 4;            // 16 分音符 1 つの秒数
 const STEPS_PER_BAR = 16;
 
 // 音名 → 周波数(A4 = 440)。midi 番号で扱う
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
-// コード進行(midi。C4 = 60)。Am, F, C, G
-const CHORDS = [
-  { root: 57, notes: [57, 60, 64] },   // A3 C4 E4
-  { root: 53, notes: [53, 57, 60] },   // F3 A3 C4
-  { root: 48, notes: [48, 52, 55] },   // C3 E3 G3
-  { root: 55, notes: [55, 59, 62] },   // G3 B3 D4
+// 調(長調の主音の midi 番号。C4 = 60)と BPM は設定で変えられる。
+// 既定の C メジャーは効果音の音階と同じ。参考曲の解析結果(docs/05)を入れると、その曲に寄せた響きになる。
+// コード進行は度数で持ち、主音から組み立てる: vi → IV → I → V(Am → F → C → G の形)
+const PROGRESSION = [
+  { degree: 9, minor: true },    // vi
+  { degree: 5, minor: false },   // IV
+  { degree: 0, minor: false },   // I
+  { degree: 7, minor: false },   // V
 ];
-// C メジャー・ペンタトニック(リードと撥弦に使う)
-const PENTA = [60, 62, 64, 67, 69, 72, 74, 76, 79, 81];
+const PENTA_DEGREES = [0, 2, 4, 7, 9];   // 長音階のペンタトニック
+
+function buildChords(tonic) {
+  return PROGRESSION.map(({ degree, minor }) => {
+    const root = tonic - 12 + degree;                  // 主音の 1 オクターブ下から
+    const third = root + (minor ? 3 : 4);
+    return { root, notes: [root, third, root + 7] };
+  });
+}
+function buildPenta(tonic) {
+  const out = [];
+  for (let oct = 0; oct < 2; oct++) for (const d of PENTA_DEGREES) out.push(tonic + 12 * oct + d);
+  return out;
+}
 
 export class Music {
   constructor(cfg) {
-    this.cfg = cfg;                     // { volume }
+    this.cfg = cfg;                     // { volume, tonic?, bpm? }
+    this.tonic = cfg.tonic ?? 60;       // 60 = C
+    this.bpm = cfg.bpm ?? 124;
+    this.stepSec = 60 / this.bpm / 4;   // 16 分音符 1 つの秒数
+    this.chords = buildChords(this.tonic);
+    this.penta = buildPenta(this.tonic);
     this.ctx = null;
     this.heat = 0;
     this.fever = false;
@@ -52,13 +69,13 @@ export class Music {
     this.ctx = ctx;
     this.master = ctx.createGain(); this.master.gain.value = 0;
     this.pump = ctx.createGain(); this.pump.gain.value = 1;        // キックに合わせて凹ませる
-    this.lowpass = ctx.createBiquadFilter(); this.lowpass.type = 'lowpass'; this.lowpass.frequency.value = 2500; this.lowpass.Q.value = 0.8;
+    this.lowpass = ctx.createBiquadFilter(); this.lowpass.type = 'lowpass'; this.lowpass.frequency.value = 3500; this.lowpass.Q.value = 0.8;
     this.comp = ctx.createDynamicsCompressor();
     this.comp.threshold.value = -14; this.comp.knee.value = 8; this.comp.ratio.value = 6; this.comp.attack.value = 0.003; this.comp.release.value = 0.2;
     this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 256; this.analyser.smoothingTimeConstant = 0.5;
     this.bins = new Uint8Array(this.analyser.frequencyBinCount);
     // リード用のエコー
-    this.delay = ctx.createDelay(1.0); this.delay.delayTime.value = STEP * 3;   // 付点 8 分
+    this.delay = ctx.createDelay(1.0); this.delay.delayTime.value = this.stepSec * 3;   // 付点 8 分
     this.delayFb = ctx.createGain(); this.delayFb.gain.value = 0.35;
     this.delayOut = ctx.createGain(); this.delayOut.gain.value = 0.3;
     this.delay.connect(this.delayFb); this.delayFb.connect(this.delay); this.delay.connect(this.delayOut); this.delayOut.connect(this.lowpass);
@@ -121,7 +138,7 @@ export class Music {
     if (Math.abs(heat - this.heat) < 0.005 && this.ctx) return;
     this.heat = heat;
     if (!this.ctx) return;
-    const cutoff = 2500 * Math.pow(12000 / 2500, heat);
+    const cutoff = 3500 * Math.pow(12000 / 3500, heat);
     this.lowpass.frequency.setTargetAtTime(cutoff, this.ctx.currentTime, 0.8);
     this.updateMaster(0.8);
   }
@@ -148,21 +165,22 @@ export class Music {
         this.playBar(this.nextTime, bar);
       }
       this.playStep(this.nextTime, bar, s);
-      this.nextTime += STEP;
+      this.nextTime += this.stepSec;
       this.step += 1;
     }
   }
 
-  chordAt(bar) { return CHORDS[bar % CHORDS.length]; }
+  chordAt(bar) { return this.chords[bar % this.chords.length]; }
 
   // 小節単位の音: パッド
   playBar(t, bar) {
     const chord = this.chordAt(bar);
-    const barLen = STEP * STEPS_PER_BAR;
+    const barLen = this.stepSec * STEPS_PER_BAR;
     for (const m of chord.notes) {
-      // 2 本を少しずらしてコーラス感
+      // 2 本を少しずらしてコーラス感。1 オクターブ上も重ねて、スマホのスピーカーでも聞こえる帯域にする
       for (const det of [-6, 6]) {
-        this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: det, dur: barLen, gain: 0.05, attack: 0.6, release: 0.8, cutoff: 1800 });
+        this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: det, dur: barLen, gain: 0.07, attack: 0.5, release: 0.8, cutoff: 2200 });
+        this.tone({ t, freq: mtof(m + 12), type: 'triangle', detune: det * 0.5, dur: barLen, gain: 0.05, attack: 0.7, release: 0.8, cutoff: 4000 });
       }
     }
     // FEVER: 小節ごとにフィルタが開いて閉じる
@@ -180,12 +198,14 @@ export class Music {
     const L = this.layers;
     const onBeat = s % 4 === 0, offBeat = s % 4 === 2;
 
-    // 撥弦(層 0〜): 1 小節に 4 回ほど、コード構成音のペンタトニックから
-    if (s % 4 === 1 || (s % 8 === 6 && L >= 2)) {
-      const pool = PENTA.filter((m) => chord.notes.some((c) => (m - c) % 12 === 0)).concat(chord.notes.map((c) => c + 12));
+    // 撥弦(層 0〜): 拍ごとに、コード構成音のペンタトニックから
+    if (s % 4 === 1 || (s % 8 === 6 && L >= 2) || (s % 8 === 3 && L === 1)) {
+      const pool = this.penta.filter((m) => chord.notes.some((c) => (m - c) % 12 === 0)).concat(chord.notes.map((c) => c + 12));
       const m = pool[(bar * 7 + s * 3) % pool.length];
-      this.tone({ t, freq: mtof(m), type: 'triangle', dur: 0.35, gain: 0.16, attack: 0.004, release: 0.3, cutoff: 5000 });
+      this.tone({ t, freq: mtof(m), type: 'triangle', dur: 0.35, gain: 0.2, attack: 0.004, release: 0.3, cutoff: 6000 });
     }
+    // 層 0 でも裏拍に小さなハイハット(拍の手がかり)
+    if (L === 1 && offBeat) this.hat(t, 0.035);
 
     // ドラム(層 1〜)
     if (L >= 2) {
@@ -197,7 +217,7 @@ export class Music {
     // ベース(層 2〜): 8 分。3 拍目の裏でオクターブ上
     if (L >= 3 && s % 2 === 0) {
       const m = chord.root - 12 + (s === 10 || s === 14 ? 12 : 0);
-      this.tone({ t, freq: mtof(m), type: 'sawtooth', dur: STEP * 1.8, gain: 0.22, attack: 0.005, release: 0.08, cutoff: 500 + this.heat * 900 });
+      this.tone({ t, freq: mtof(m), type: 'sawtooth', dur: this.stepSec * 1.8, gain: 0.22, attack: 0.005, release: 0.08, cutoff: 500 + this.heat * 900 });
     }
 
     // リードのアルペジオ(層 3〜): 16 分。FEVER では 1 オクターブ上
@@ -206,7 +226,7 @@ export class Music {
       const notes = chord.notes.map((c) => c + 12 + (this.fever ? 12 : 0));
       const m = notes[pattern[s % 8]] + (s >= 8 && bar % 2 === 1 ? 2 : 0) * 0;
       const g = (s % 4 === 0 ? 0.13 : 0.09) * (this.fever ? 1.15 : 1);
-      this.tone({ t, freq: mtof(m), type: 'square', dur: STEP * 0.9, gain: g, attack: 0.003, release: 0.08, cutoff: 3500, toDelay: true });
+      this.tone({ t, freq: mtof(m), type: 'square', dur: this.stepSec * 0.9, gain: g, attack: 0.003, release: 0.08, cutoff: 3500, toDelay: true });
     }
   }
 
@@ -237,7 +257,7 @@ export class Music {
     if (this.fever) {
       this.pump.gain.cancelScheduledValues(t);
       this.pump.gain.setValueAtTime(0.55, t);
-      this.pump.gain.linearRampToValueAtTime(1, t + STEP * 3);
+      this.pump.gain.linearRampToValueAtTime(1, t + this.stepSec * 3);
     }
   }
 

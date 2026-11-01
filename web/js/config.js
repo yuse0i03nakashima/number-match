@@ -3,7 +3,7 @@ export const CONFIG = {
   score: {
     pairBase: 10,          // 1 Pair の基礎点。得点 = 基礎点 × 難しさ倍率 × Chain 倍率 × Speed 倍率(× FEVER)
     rowClear: 100,         // 行が消えたとき: rowClear × (同時に消えた行数)^2 × Chain 倍率
-    stageClear: 200,       // Stage Clear
+    stageClear: 200,       // Stage Clear(ALL CLEAR)。Board を全部消すと入り、Chain は途切れずに次の Stage へ続く
     perfect: 500,          // Add なしで Clear
     addSaved: 150,         // Clear 時、使わずに残した Add 1 回ごと(温存 Bonus)
     hintSaved: 50,         // Clear 時、使わずに残した Hint 1 回ごと
@@ -61,7 +61,10 @@ export const CONFIG = {
     max: 3,
     perfectRecover: 1,     // Perfect で回復する Heart
   },
-  worldSize: 5,            // 5 Stage = 1 World。Run 終了後は World のはじめから再開
+  worldSize: 5,            // 5 Stage = 1 World。Run 終了後は World のはじめから再開。Result の画面は World の終わりだけ
+  flow: {
+    autoNextMs: 2200,      // ALL CLEAR の演出を見せてから次の Stage へ進むまでの時間
+  },
   fx: {
     particlesPerRemove: 22,
     particlesPerRow: 110,
@@ -72,6 +75,8 @@ export const CONFIG = {
   bgm: {
     mode: 'synth',                   // 既定: 'synth'(生成 BGM) | 'track'(mp3) | 'off'
     synthVolume: 0.30,               // 生成 BGM の音量
+    tonic: 64,                       // 生成 BGM の調(長調の主音の midi 番号)。64 = E。参考曲 Under a Darkening Sky の解析結果(E メジャー)に合わせた
+    bpm: 124,                        // 生成 BGM のテンポ
     volume: 0.22,                    // mp3 の音量(効果音より少し小さく。出口のコンプレッサーで割れを防ぐ)
     tracks: { normal: 'bgm/normal.mp3', fever: 'bgm/fever.mp3' },   // 通常曲と FEVER 曲(同時に鳴らし、音量だけで切り替える)
     trims: { normal: 1.0, fever: 0.9 },   // 曲ごとの音量合わせ

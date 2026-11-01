@@ -4,7 +4,7 @@
 
 // 長音階(ドレミファソラシド)。Chain が 1 つ上がるごとに 1 音上がり、8 連鎖で 1 オクターブ上のドに戻る。
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];        // 半音の並び(C メジャー)
-const C4 = 261.6256;                          // 中央のド(A4 = 440 Hz の平均律)
+const C4 = 329.6276;                          // 音階の基準。BGM と同じ E メジャーに合わせる(E4。A4 = 440 Hz の平均律)
 
 function noteFreq(index) {
   const octave = Math.floor(index / MAJOR.length);
