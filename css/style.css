@@ -107,14 +107,36 @@ body.gridflash::after { animation:gridflash 0.45s ease-out; }
   font-family:var(--font-mono); font-size:12px; letter-spacing:1px; color:var(--heat);
   font-variant-numeric:tabular-nums; transition:color 0.3s;
 }
+.chain-bars { display:flex; flex-direction:column; gap:3px; }
 .chain-bar { position:relative; width:64px; height:4px; background:var(--surface3); overflow:hidden; }
+.gauge-bar { position:relative; width:64px; height:2px; background:var(--surface3); overflow:hidden; }
+.gauge-fill { position:absolute; left:0; top:0; bottom:0; width:0%; background:var(--text-muted); transition:width 0.2s linear; }
+.gauge-fill.low { background:var(--red); animation:gauge-blink 0.4s steps(2) infinite; }
+@keyframes gauge-blink { 0%{opacity:1} 100%{opacity:0.3} }
 .chain-fill {
   position:absolute; left:0; top:0; bottom:0; width:0%;
   background:var(--heat); transition:width 0.25s ease-out, background 0.3s;
   box-shadow:0 0 8px var(--heat);
 }
 
-/* ---------- ボード面 ---------- */
+/* ---------- FEVER ---------- */
+.fever {
+  display:flex; align-items:center; gap:10px; margin-top:8px; padding:4px 10px;
+  border:1px solid var(--rose); background:rgba(240,98,146,0.12);
+  animation:fever-pulse 0.6s ease-in-out infinite alternate;
+}
+.fever[hidden] { display:none; }
+.fever-label { font-family:var(--font-mono); font-size:11px; letter-spacing:3px; color:var(--rose); font-weight:500; white-space:nowrap; }
+.fever-bar { flex:1; height:4px; background:var(--surface3); overflow:hidden; }
+.fever-fill { display:block; height:100%; width:100%; background:linear-gradient(90deg, var(--rose), var(--amber), var(--purple)); transition:width 0.25s linear; }
+@keyframes fever-pulse { 0%{box-shadow:0 0 6px rgba(240,98,146,0.3)} 100%{box-shadow:0 0 18px rgba(240,98,146,0.7)} }
+body.fever { animation:fever-bg 1.2s ease-in-out infinite alternate; }
+@keyframes fever-bg { 0%{background:#0c0d11} 100%{background:#1a0e1c} }
+body.fever::after { opacity:0.5; animation:fever-grid 0.6s ease-in-out infinite alternate; }
+@keyframes fever-grid { 0%{opacity:0.35} 100%{opacity:0.65} }
+body.fever .hud, body.fever .controls { border-color:rgba(240,98,146,0.5); }
+
+/* ---------- Board ---------- */
 .board-wrap {
   flex:1; min-height:0;
   display:flex; justify-content:center; align-items:flex-start;
@@ -154,6 +176,8 @@ body.gridflash::after { animation:gridflash 0.45s ease-out; }
   box-shadow:0 0 0 1px var(--heat), 0 0 16px color-mix(in srgb, var(--heat) 55%, transparent);
   transform:scale(1.06);
 }
+.cell.squash { animation:squash 0.32s cubic-bezier(.3,1.6,.5,1); }
+@keyframes squash { 0%{transform:scale(1.25,0.8)} 50%{transform:scale(0.95,1.12)} 100%{transform:scale(1.06)} }
 .cell.hint { animation:hint-pulse 0.9s ease-in-out infinite; border-color:var(--amber); color:var(--amber); }
 @keyframes hint-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(245,166,35,0)} 50%{box-shadow:0 0 0 4px rgba(245,166,35,0.35)} }
 .cell.removing {
@@ -186,8 +210,9 @@ body.gridflash::after { animation:gridflash 0.45s ease-out; }
 .ctl-primary .ctl-sub { color:rgba(12,13,17,0.7); }
 .ctl-primary:disabled { background:var(--surface); border-color:var(--border); }
 .ctl-primary:disabled .ctl-label { color:var(--text-dim); }
-.ctl-primary.urge { animation:urge 1s ease-in-out infinite; }
-@keyframes urge { 0%,100%{box-shadow:0 0 0 0 rgba(91,143,249,0)} 50%{box-shadow:0 0 0 6px rgba(91,143,249,0.35)} }
+.ctl-danger { background:var(--surface); border-color:var(--red); }
+.ctl-danger .ctl-label { color:var(--red); }
+.ctl-danger .ctl-sub { color:var(--text-dim); }
 .stock { display:inline-flex; gap:4px; }
 .stock .dot { width:6px; height:6px; border-radius:50%; background:rgba(12,13,17,0.85); }
 .stock .dot.off { background:rgba(12,13,17,0.25); }
@@ -232,7 +257,16 @@ body.gridflash::after { animation:gridflash 0.45s ease-out; }
 .card .row .v.plus { color:var(--green); }
 .card .row .v.minus { color:var(--red); }
 .card .row.total .v { font-size:20px; font-weight:500; }
-.card .stars { display:flex; gap:10px; justify-content:center; margin:16px 0 4px; font-size:34px; line-height:1; }
+.card .result { display:flex; align-items:center; justify-content:center; gap:22px; margin:16px 0 4px; }
+.card .rank { font-family:var(--font-mono); font-weight:500; font-size:54px; line-height:1; letter-spacing:2px;
+  color:var(--text-dim); transform:scale(0.4); opacity:0; }
+.card .rank.show { animation:rank-in 0.5s cubic-bezier(.2,1.5,.4,1) forwards; }
+.card .rank.S { color:var(--amber); text-shadow:0 0 24px rgba(245,166,35,0.7); }
+.card .rank.A { color:var(--rose); text-shadow:0 0 18px rgba(240,98,146,0.6); }
+.card .rank.B { color:var(--blue); }
+.card .rank.C { color:var(--text-muted); }
+@keyframes rank-in { 0%{transform:scale(2.2); opacity:0} 100%{transform:scale(1); opacity:1} }
+.card .stars { display:flex; gap:10px; justify-content:center; font-size:34px; line-height:1; }
 .card .stars .star { color:var(--border-light); transform:scale(0.6); opacity:0; }
 .card .stars .star.on { color:var(--amber); text-shadow:0 0 18px rgba(245,166,35,0.6); }
 .card .stars .star.show { animation:star-in 0.45s cubic-bezier(.2,1.6,.4,1) forwards; }
@@ -253,6 +287,8 @@ body.gridflash::after { animation:gridflash 0.45s ease-out; }
 .worlds { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:8px; }
 .worlds .btn { padding:10px 6px; font-size:10px; flex-direction:column; gap:2px; }
 .worlds .btn small { font-size:9px; letter-spacing:1px; color:var(--text-dim); text-transform:none; }
+.ranks { display:flex; gap:10px; justify-content:center; font-family:var(--font-mono); font-size:11px; letter-spacing:1px; }
+.ranks .S { color:var(--amber); } .ranks .A { color:var(--rose); } .ranks .B { color:var(--blue); } .ranks .C { color:var(--text-muted); }
 .card .rules { font-size:13px; line-height:1.9; color:var(--text-muted); font-weight:300; margin-top:12px; text-wrap:pretty; }
 .card .rules b { color:var(--text); font-weight:500; }
 .card .rules .ex { font-family:var(--font-mono); color:var(--heat); }

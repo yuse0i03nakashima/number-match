@@ -1,5 +1,6 @@
 // 起点。面データを読み、Game / Renderer / FX / Sound をつなぐ。
 // 入力 → game.*() → イベントの配列 → handle() で画面・演出・音に振り分ける。
+// 時間 → game.tick() を 200ms ごとに呼び、Chain ゲージと FEVER を進める。
 
 import { CONFIG } from './config.js';
 import { Game } from './game.js';
@@ -21,7 +22,8 @@ async function boot() {
   const sound = new Sound(CONFIG.audio.masterVolume);
   const app = document.getElementById('app');
   let busy = false;   // 消去アニメ中の多重入力を防ぐ
-  let lineStreak = 0; // 連続で行を消した回数(行が消えない手・Add・Hint・ステージ開始で 0 に戻る)
+  let lineStreak = 0; // 連続で行を消した回数(行が消えない手・Add・Hint・Stage 開始で 0 に戻る)
+  const overlayOpen = () => document.getElementById('overlay').hidden === false;
 
   // ---------- 描き直し ----------
   function redraw(opts = {}) {
@@ -39,12 +41,22 @@ async function boot() {
     document.body.classList.remove('gridflash'); void document.body.offsetWidth; document.body.classList.add('gridflash');
   }
 
+  // ---------- 時間 ----------
+  // Chain ゲージと FEVER は時間で動くので、定期的に進めて HUD を描き直す
+  setInterval(() => {
+    if (!game.stage || game.stage.status !== 'play' || overlayOpen()) return;
+    const now = Date.now();
+    const events = game.tick(now);
+    if (events.length) handle(events);
+    else ui.renderHud(game, now);
+  }, 200);
+
   // ---------- イベントの振り分け ----------
   async function handle(events) {
     for (const ev of events) {
       switch (ev.type) {
         case 'select': {
-          ui.cellEl(ev.pos)?.classList.add('selected');
+          ui.selectCell(ev.pos);
           sound.select(); vibrate(8);
           break;
         }
@@ -60,12 +72,38 @@ async function boot() {
           break;
         }
         case 'remove': await onRemove(ev); break;
+        case 'feverStart': {
+          sound.feverStart(); vibrate([60, 40, 60, 40, 150]);
+          fx.flash('rgba(240,98,146,0.35)');
+          fx.fireworks(5);
+          punch();
+          fx.floatText(innerWidth / 2, innerHeight * 0.4, 'FEVER!!', { color: PALETTE.rose, size: 44, dy: -40, life: 1.6 });
+          fx.floatText(innerWidth / 2, innerHeight * 0.4 + 40, `${CONFIG.fever.durationMs / 1000} 秒間 Score ×${CONFIG.fever.pointMult}`, { color: PALETTE.white, size: 14, dy: -30, life: 1.6 });
+          ui.renderHud(game);
+          break;
+        }
+        case 'feverEnd': {
+          sound.feverEnd();
+          ui.toast(`FEVER 終了 … Chain ×${ev.mult.toFixed(1)}`, 2000);
+          ui.renderHud(game);
+          break;
+        }
+        case 'chainDecay': {
+          sound.chainDecay();
+          ui.renderHud(game);
+          if (ev.chain === 0) ui.toast('Chain が途切れた … ×1.0', 1500);
+          break;
+        }
         case 'noAdds': ui.toast('Add はもう使えない'); sound.invalid(); break;
         case 'noHint': {
-          // ペアが残っていないのに Hint を押した: 途切れたうえに減点
+          // Pair が残っていないのに Hint を押した
           lineStreak = 0;
           redraw();
-          ui.toast(ev.addsLeft > 0 ? `ペアはもう無い… −${ev.penalty}　Add で数字を足そう` : `ペアはもう無い… −${ev.penalty}`, 2600);
+          if (ev.blind) {
+            ui.toast(`Pair はもう無く、Add も無かった… −${fmt(ev.penalty)}`, 3000);
+          } else {
+            ui.toast(`Pair はもう無い… −${ev.penalty}　Add で数字を足そう`, 2600);
+          }
           fx.flash('rgba(239,68,68,0.15)');
           sound.stuck(); vibrate([30, 30, 30]);
           break;
@@ -75,9 +113,9 @@ async function boot() {
           sound.add(); vibrate(25);
           redraw({ addedFrom: ev.oldLength });
           if (ev.stuckBefore && ev.chainBefore > 0) {
-            ui.toast(`詰みからの Add: チェーンは半分残る ×${ev.multBefore.toFixed(1)} → ×${ev.multAfter.toFixed(1)}`, 2200);
+            ui.toast(`詰みからの Add: Chain は半分残る ×${ev.multBefore.toFixed(1)} → ×${ev.multAfter.toFixed(1)}`, 2200);
           } else if (ev.chainBefore > 0) {
-            ui.toast('まだペアがあった… チェーンが途切れた ×1.0', 2200);
+            ui.toast('まだ Pair があった… Chain が途切れた ×1.0', 2200);
           }
           // 追加された行が見えるように下へ
           requestAnimationFrame(() => ui.boardWrap.scrollTo({ top: ui.boardWrap.scrollHeight, behavior: 'smooth' }));
@@ -87,7 +125,7 @@ async function boot() {
           lineStreak = 0;
           sound.hint();
           redraw();
-          if (ev.brokeChain) ui.toast('Hint: チェーンが途切れた ×1.0');
+          if (ev.brokeChain) ui.toast('Hint: Chain が途切れた ×1.0');
           const c = ui.cellCenter(ev.pair[0]);
           if (c) fx.ring(c.x, c.y, PALETTE.amber, 50);
           break;
@@ -110,21 +148,23 @@ async function boot() {
 
   async function onRemove(ev) {
     busy = true;
-    const color = heatColor(ev.heat);
+    const color = ev.fever ? PALETTE.rose : heatColor(ev.heat);
     const ci = ui.cellCenter(ev.i), cj = ui.cellCenter(ev.j);
     const speedBoost = ev.speed === 'fast' ? 1 : ev.speed === 'quick' ? 0.5 : 0;   // 速いほど派手に
-    const power = 0.8 + ev.heat * 1.4 + speedBoost * 0.5;
+    const feverBoost = ev.fever ? 1 : 0;                                            // FEVER 中はすべて増量
+    const power = 0.8 + ev.heat * 1.4 + speedBoost * 0.5 + feverBoost * 0.6;
     const mx = ci && cj ? (ci.x + cj.x) / 2 : innerWidth / 2;
     const my = ci && cj ? (ci.y + cj.y) / 2 : innerHeight / 2;
 
-    // 1. 2 マスを結ぶ光が両端で爆ぜ、得点がスコア表示へ飛んでいく
+    // 1. 2 マスを結ぶ光が尾を引き、両端で爆ぜ、得点が Score 表示へ飛んでいく
     if (ci && cj) {
-      fx.flashLine(ci.x, ci.y, cj.x, cj.y, color, 3 + ev.heat * 3 + speedBoost * 2);
-      const count = CONFIG.fx.particlesPerRemove + Math.round(ev.heat * 24 + speedBoost * 12);
-      for (const c of [ci, cj]) fx.burst(c.x, c.y, { color, count, power, size: 3 + speedBoost });
-      if (ev.heat > 0.5 || speedBoost > 0) fx.ring(mx, my, color, 40 + ev.heat * 60 + speedBoost * 30);
+      fx.flashLine(ci.x, ci.y, cj.x, cj.y, color, 3 + ev.heat * 3 + speedBoost * 2 + feverBoost * 2);
+      fx.trail(ci.x, ci.y, cj.x, cj.y, color, 10 + Math.round(ev.heat * 10 + feverBoost * 12));
+      const count = CONFIG.fx.particlesPerRemove + Math.round(ev.heat * 24 + speedBoost * 12 + feverBoost * 24);
+      for (const c of [ci, cj]) fx.burst(c.x, c.y, { color, count, power, size: 3 + speedBoost + feverBoost });
+      if (ev.heat > 0.5 || speedBoost > 0 || feverBoost) fx.ring(mx, my, color, 40 + ev.heat * 60 + speedBoost * 30 + feverBoost * 40);
       const target = ui.scoreCenter();
-      fx.flyText(mx, my, target.x, target.y, `+${ev.pairPoints}`, { color, size: 18 + ev.heat * 10 + speedBoost * 4, dur: 0.5 });
+      fx.flyText(mx, my, target.x, target.y, `+${ev.pairPoints}`, { color, size: 18 + ev.heat * 10 + speedBoost * 4 + feverBoost * 6, dur: 0.5 });
       // 難しい道・速さのラベル
       const labels = [...ev.labels];
       if (ev.speed === 'fast') labels.push('FAST!!');
@@ -140,15 +180,15 @@ async function boot() {
     ui.markRemoving(ev.i, ev.j);
     sound.remove(ev.chain, ev.heat);
     vibrate(12 + Math.round(ev.heat * 20));
-    fx.shake(ui.boardWrap, CONFIG.fx.shakeBase * (0.5 + ev.heat * 1.5 + speedBoost), 160);
+    fx.shake(ui.boardWrap, CONFIG.fx.shakeBase * (0.5 + ev.heat * 1.5 + speedBoost + feverBoost), 160);
 
     // 2. 行が消えるときはヒットストップのあと横一閃+大量の粒子+揺れ+画面の膨らみ。
     //    連続で行を消すほど(lineStreak)粒子・揺れ・フラッシュ・音が段階的に強くなる。
     if (ev.clearedRows.length > 0) {
       lineStreak += 1;
       const n = ev.clearedRows.length;
-      const boost = Math.min(4, lineStreak - 1);          // 0〜4 段階
-      const streakColor = [PALETTE.amber, PALETTE.amber, PALETTE.rose, PALETTE.red, PALETTE.purple][boost];
+      const boost = Math.min(4, lineStreak - 1) + feverBoost;   // 0〜5 段階
+      const streakColor = [PALETTE.amber, PALETTE.amber, PALETTE.rose, PALETTE.red, PALETTE.purple, PALETTE.purple][boost];
       fx.freeze(CONFIG.fx.hitStopMs + boost * 30);        // 一瞬止めてから爆発させる
       await sleep(CONFIG.fx.hitStopMs + boost * 40);
       ui.markRowsRemoving(ev.clearedRows);
@@ -175,10 +215,10 @@ async function boot() {
         const label = ['', '', 'DOUBLE', 'TRIPLE', 'QUAD', 'RAMPAGE'][Math.min(lineStreak, 5)];
         fx.floatText(innerWidth / 2, y - 64, `${label} LINE  ×${lineStreak}`, { color: streakColor, size: 24 + boost * 4, dy: -50, life: 1.5 });
       }
-      if (lineStreak >= 4) fx.fireworks(2 + boost);
+      if (lineStreak >= 4 || feverBoost) fx.fireworks(2 + boost);
       fx.flash(n > 1 || boost >= 1 ? `rgba(245,166,35,${0.22 + boost * 0.08})` : 'rgba(255,255,255,0.14)');
       fx.shake(ui.boardWrap, 6 + n * 3 + boost * 4, 320 + boost * 80);
-      sound.rowClear(n + boost);
+      sound.rowClear(n, lineStreak - 1 + feverBoost);
       vibrate(boost >= 2 ? [40, 40, 80, 40, 120] : [30, 40, 60]);
       await sleep(220 + boost * 60);
     } else {
@@ -186,7 +226,7 @@ async function boot() {
       await sleep(180);
     }
     redraw();
-    setTimeout(() => ui.bumpScore(), 250);   // 飛んだ得点が届くころにスコアが跳ねる
+    setTimeout(() => ui.bumpScore(), 250);   // 飛んだ得点が届くころに Score が跳ねる
     busy = false;
   }
 
@@ -202,21 +242,26 @@ async function boot() {
     const card = ui.showOverlay(`
       <div class="eyebrow">stage ${pad2(ev.stage)}</div>
       <h1>${ev.perfect ? 'Perfect!' : 'Stage Clear'}</h1>
-      <div class="ja">${ev.perfect ? 'AddなしでCLEAR！！ハートが回復！' : ev.isLast ? '最後のステージを突破！！' : 'ALL CLEAR!!'}</div>
-      <div class="stars"><span class="star">★</span><span class="star">★</span><span class="star">★</span></div>
+      <div class="ja">${ev.perfect ? 'Add なしで Clear！！Heart が回復！' : ev.isLast ? '最後の Stage を突破！！' : 'ALL CLEAR!!'}</div>
+      <div class="result">
+        <div class="rank ${ev.rank}" id="ov-rank">${ev.rank}</div>
+        <div class="stars"><span class="star">★</span><span class="star">★</span><span class="star">★</span></div>
+      </div>
       <div class="rows">
-        <div class="row"><span class="k">ステージ得点</span><span class="v">${fmt(ev.stageScore - ev.clearBonus - ev.perfectBonus)}</span></div>
-        <div class="row"><span class="k">クリアボーナス</span><span class="v plus">+${fmt(ev.clearBonus)}</span></div>
-        ${ev.perfect ? `<div class="row"><span class="k">パーフェクト</span><span class="v plus">+${fmt(ev.perfectBonus)}</span></div>` : ''}
-        ${ev.lifeGain ? `<div class="row"><span class="k">ハート回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
-        <div class="row"><span class="k">Addの使用</span><span class="v">${ev.addsUsed} 回</span></div>
-        <div class="row total"><span class="k">合計スコア</span><span class="v">${fmt(ev.score)}</span></div>
+        <div class="row"><span class="k">Play Score</span><span class="v">${fmt(ev.playScore)}</span></div>
+        <div class="row"><span class="k">Clear Bonus</span><span class="v plus">+${fmt(ev.clearBonus)}</span></div>
+        ${ev.perfect ? `<div class="row"><span class="k">Perfect Bonus</span><span class="v plus">+${fmt(ev.perfectBonus)}</span></div>` : ''}
+        ${ev.savedBonus ? `<div class="row"><span class="k">Add 温存 Bonus(${ev.addsLeft} 回)</span><span class="v plus">+${fmt(ev.savedBonus)}</span></div>` : ''}
+        ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
+        <div class="row"><span class="k">Add の使用</span><span class="v">${ev.addsUsed} 回</span></div>
+        <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
       </div>
       <div class="actions">
-        <button class="btn btn-primary" id="ov-next">${ev.isLast ? 'Resultを見る' : '次のステージ →'}</button>
-        <button class="btn btn-ghost" id="ov-title">タイトルへ</button>
+        <button class="btn btn-primary" id="ov-next">${ev.isLast ? 'Result を見る' : 'Next Stage →'}</button>
+        <button class="btn btn-ghost" id="ov-title">Title へ</button>
       </div>`);
     ui.animateStars(card, ev.stars);
+    setTimeout(() => { card.querySelector('#ov-rank')?.classList.add('show'); if (ev.rank === 'S') { sound.perfect(); fx.fireworks(4); } }, 1100);
     if (ev.lifeGain) { ui.renderLives(game.run.lives, CONFIG.lives.max, { gained: true }); sound.lifeGain(); }
     ui.renderHud(game);
     card.querySelector('#ov-next').onclick = () => { busy = false; handle(game.nextStage()); };
@@ -225,23 +270,31 @@ async function boot() {
 
   async function onStageFailed(ev) {
     busy = true;
-    sound.fail(); vibrate([80, 50, 80]);
+    if (ev.reason === 'giveUp') sound.giveUp(); else sound.fail();
+    vibrate([80, 50, 80]);
     ui.renderLives(ev.lives + 1, CONFIG.lives.max, { lost: true });
     fx.flash('rgba(239,68,68,0.18)');
     fx.shake(ui.boardWrap, 8, 400);
     await sleep(900);
+    const title = ev.reason === 'giveUp' ? 'Give Up' : ev.reason === 'blindHint' ? 'Stuck' : 'Stuck';
+    const text = ev.reason === 'giveUp'
+      ? 'Stage をあきらめた。Stage 得点の半分は残る。'
+      : ev.reason === 'blindHint'
+        ? 'Pair は無く Add も無かったのに Hint を押した… Stage 得点を全部失い、さらに減点。'
+        : '消せる Pair が無く、Add も残っていない…';
     const card = ui.showOverlay(`
       <div class="eyebrow">stage ${pad2(ev.stage)}</div>
-      <h1>${ev.reason === 'giveUp' ? 'Give Up' : 'Stuck'}</h1>
-      <div class="ja">${ev.reason === 'giveUp' ? 'ステージをあきらめた…' : '消せるペアが存在せず、Addも残っていない…'}ハートを 1 つ失った。</div>
+      <h1>${title}</h1>
+      <div class="ja">${text} Heart を 1 つ失った。</div>
       <div class="rows">
-        <div class="row"><span class="k">失ったステージ得点</span><span class="v minus">−${fmt(ev.lost)}</span></div>
-        <div class="row"><span class="k">残りハート</span><span class="v">${'♥'.repeat(ev.lives)}${'♡'.repeat(CONFIG.lives.max - ev.lives)}</span></div>
-        <div class="row total"><span class="k">スコア</span><span class="v">${fmt(game.run.score)}</span></div>
+        <div class="row"><span class="k">失った Stage 得点</span><span class="v minus">−${fmt(ev.lost)}</span></div>
+        ${ev.kept ? `<div class="row"><span class="k">残った Stage 得点</span><span class="v plus">${fmt(ev.kept)}</span></div>` : ''}
+        <div class="row"><span class="k">残り Heart</span><span class="v">${'♥'.repeat(ev.lives)}${'♡'.repeat(CONFIG.lives.max - ev.lives)}</span></div>
+        <div class="row total"><span class="k">Score</span><span class="v">${fmt(game.run.score)}</span></div>
       </div>
       <div class="actions">
-        <button class="btn btn-warn" id="ov-retry">新しいボードで再挑戦</button>
-        <button class="btn btn-ghost" id="ov-title">タイトルへ</button>
+        <button class="btn btn-warn" id="ov-retry">新しい Board で Retry</button>
+        <button class="btn btn-ghost" id="ov-title">Title へ</button>
       </div>`);
     card.querySelector('#ov-retry').onclick = () => { busy = false; handle(game.retryStage()); };
     card.querySelector('#ov-title').onclick = () => { busy = false; showTitle(); };
@@ -258,14 +311,14 @@ async function boot() {
     const card = ui.showOverlay(`
       <div class="eyebrow">run over</div>
       <h1 class="big">${fmt(ev.score)}</h1>
-      <div class="ja">ハートが尽きた…${ev.score >= ev.best && ev.score > 0 ? 'ベストスコア更新！！' : `ベスト ${fmt(ev.best)}`}</div>
+      <div class="ja">Heart が尽きた…${ev.score >= ev.best && ev.score > 0 ? 'Best Score 更新！！' : `Best ${fmt(ev.best)}`}</div>
       <div class="rows">
-        <div class="row"><span class="k">到達ステージ</span><span class="v">${pad2(ev.stage)}</span></div>
+        <div class="row"><span class="k">到達 Stage</span><span class="v">${pad2(ev.stage)}</span></div>
         <div class="row"><span class="k">再開地点</span><span class="v">WORLD ${w} (STAGE ${pad2(ev.resumeStage + 1)})</span></div>
       </div>
       <div class="actions">
-        <button class="btn btn-primary" id="ov-restart">ワールド ${w} のはじめから</button>
-        <button class="btn btn-ghost" id="ov-title">タイトルへ</button>
+        <button class="btn btn-primary" id="ov-restart">World ${w} のはじめから</button>
+        <button class="btn btn-ghost" id="ov-title">Title へ</button>
       </div>`);
     card.querySelector('#ov-restart').onclick = () => { busy = false; handle(game.restartFromWorld()); };
     card.querySelector('#ov-title').onclick = () => { busy = false; game.abandonRun(); showTitle(); };
@@ -277,17 +330,23 @@ async function boot() {
     const card = ui.showOverlay(`
       <div class="eyebrow">all ${stages.length} stages</div>
       <h1 class="big">Complete</h1>
-      <div class="ja">全ステージを突破！！計 ${fmt(ev.score)} 点、ベスト ${fmt(ev.best)} 点</div>
+      <div class="ja">全 Stage を突破！！計 ${fmt(ev.score)} 点、Best ${fmt(ev.best)} 点</div>
       <div class="rows">
-        <div class="row"><span class="k">集めたスター</span><span class="v">${game.totalStars} / ${stages.length * 3}</span></div>
+        <div class="row"><span class="k">集めた Star</span><span class="v">${game.totalStars} / ${stages.length * 3}</span></div>
+        <div class="row"><span class="k">Rank</span><span class="v">${rankSummary()}</span></div>
       </div>
       <div class="actions">
-        <button class="btn btn-primary" id="ov-title">タイトルへ</button>
+        <button class="btn btn-primary" id="ov-title">Title へ</button>
       </div>`);
     card.querySelector('#ov-title').onclick = () => { game.abandonRun(); showTitle(); };
   }
 
-  // ---------- タイトル・メニュー ----------
+  function rankSummary() {
+    const c = game.rankCounts;
+    return `<span class="ranks"><span class="S">S ×${c.S}</span><span class="A">A ×${c.A}</span><span class="B">B ×${c.B}</span><span class="C">C ×${c.C}</span></span>`;
+  }
+
+  // ---------- Title・Menu ----------
   function showTitle() {
     busy = false;
     const canResume = game.run && game.stage && (game.stage.status === 'play' || game.stage.status === 'clear' || game.stage.status === 'failed');
@@ -296,20 +355,23 @@ async function boot() {
     for (let w = 0; w < total; w++) {
       const unlocked = w < game.unlockedWorlds;
       const first = w * CONFIG.worldSize;
-      const starsIn = stages.slice(first, first + CONFIG.worldSize).reduce((a, s) => a + (game.progress.stars[s.stage] ?? 0), 0);
-      worlds.push(`<button class="btn btn-ghost" data-world="${w}" ${unlocked ? '' : 'disabled'}>WORLD ${w + 1}<small>${unlocked ? `★ ${starsIn}/${CONFIG.worldSize * 3}` : 'locked'}</small></button>`);
+      const inWorld = stages.slice(first, first + CONFIG.worldSize);
+      const starsIn = inWorld.reduce((a, s) => a + (game.progress.stars[s.stage] ?? 0), 0);
+      const ranksIn = inWorld.map((s) => game.progress.ranks[s.stage] ?? '·').join(' ');
+      worlds.push(`<button class="btn btn-ghost" data-world="${w}" ${unlocked ? '' : 'disabled'}>WORLD ${w + 1}<small>${unlocked ? `★ ${starsIn}/${CONFIG.worldSize * 3}` : 'locked'}</small>${unlocked ? `<small>${ranksIn}</small>` : ''}</button>`);
     }
     const card = ui.showOverlay(`
       <div class="eyebrow">number match</div>
       <h1 class="big">THE TEN</h1>
-      <div class="ja">同じ数字か、足して 10 になる 2 つの数字のペアをタップで選んで消していこう！ボード内の数字を全て消せばステージクリア！！</div>
+      <div class="ja">同じ数字か、足して 10 になる 2 つの数字の Pair をタップで選んで消していこう！Board の数字を全部消せば Stage Clear！！</div>
       <div class="rows">
-        <div class="row"><span class="k">ベストスコア</span><span class="v">${fmt(game.progress.bestScore)}</span></div>
-        <div class="row"><span class="k">集めたスター</span><span class="v">★ ${game.totalStars} / ${stages.length * 3}</span></div>
+        <div class="row"><span class="k">Best Score</span><span class="v">${fmt(game.progress.bestScore)}</span></div>
+        <div class="row"><span class="k">Star</span><span class="v">★ ${game.totalStars} / ${stages.length * 3}</span></div>
+        <div class="row"><span class="k">Rank</span><span class="v">${rankSummary()}</span></div>
       </div>
       <div class="actions">
-        ${canResume ? `<button class="btn btn-primary" id="ov-resume">つづきから (STAGE ${pad2(game.stageDef.stage)})</button>` : ''}
-        <button class="btn ${canResume ? 'btn-ghost' : 'btn-primary'}" id="ov-new">はじめから</button>
+        ${canResume ? `<button class="btn btn-primary" id="ov-resume">Continue (STAGE ${pad2(game.stageDef.stage)})</button>` : ''}
+        <button class="btn ${canResume ? 'btn-ghost' : 'btn-primary'}" id="ov-new">New Game</button>
         <div class="worlds">${worlds.join('')}</div>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
       </div>
@@ -319,6 +381,7 @@ async function boot() {
       const st = game.stage;
       if (st.status === 'clear') { ui.hideOverlay(); redraw(); handle(game.nextStage()); return; }
       if (st.status === 'failed') { handle(game.retryStage()); return; }
+      game.resume(Date.now());
       ui.hideOverlay(); redraw();
     });
     card.querySelector('#ov-new').onclick = () => { sound.ensure(); handle(game.newRun(0)); };
@@ -334,23 +397,26 @@ async function boot() {
       <div class="eyebrow">how to play</div>
       <h1>How to Play</h1>
       <div class="rules">
-        <b>ペア</b>とは、<span class="ex">同じ数字どうし</span>(4 と 4)か、<span class="ex">足して 10 になる 2 つ</span>(3 と 7、1 と 9)のこと。<br>
-        <b>消せるペア</b>は、次のどちらかの位置にあるペア。<br>
+        <b>Pair</b> とは、<span class="ex">同じ数字どうし</span>(4 と 4)か、<span class="ex">足して 10 になる 2 つ</span>(3 と 7、1 と 9)のこと。<br>
+        <b>消せる Pair</b> は、次のどちらかの位置にある Pair。<br>
         ・縦・横・斜めの一直線上に並んでいて、2 つの間が全部空マス(隣どうしも含む)。<br>
         ・読む順番(左から右、上から下)で続いていて、間が全部空マス。行の右端と次の行の左端も続きとみなす。<br>
-        <b>消し方</b>: 1 つ目の数字をタップし、2 つ目をタップする。ペアでなければ 2 つ目が選び直しになる。<br>
-        <b>スコア</b>: 1 ペア ${c.score.pairBase} 点が基本。<span class="ex">難しい消し方</span>ほど加点: 間の空マス 1 つごとに +${c.score.gapPerCell}(他を消して初めて通った道)、行をまたぐと +${c.score.wrap}、斜めは +${c.score.diagonal}、縦は +${c.score.vertical}。<br>
-        <b>チェーン</b>: 消すたびにスコアの倍率 +${c.chain.step}(最大 ×${c.chain.max})。Add か Hint を使うと途切れて ×1.0 に戻る。<br>
-        <b>スピード</b>: 前の消去から ${c.speed.quickMs / 1000} 秒以内なら QUICK(×${c.speed.quickMult})、${c.speed.fastMs / 1000} 秒以内なら FAST(×${c.speed.fastMult})。<br>
-        <b>行</b>: 1 行まるごと空になるとその行がボードから消え、${c.score.rowClear} 点 × 行数の 2 乗 × 倍率。<br>
-        <b>Add(＋ADD)</b>: ボードに残っている数字を、読む順番のまま末尾に書き足す。使える回数はステージごとに決まっている。<br>
-        <b>Hint</b>: 消せるペアを 1 つ光らせる。チェーンは途切れる。<br>
-        <b>詰み</b>: 消せるペアが無くなってもゲームは教えない。詰んでから Add を押せばチェーンは半分残る。詰んでいるのに Hint を押すと、途切れたうえに −${c.score.hintWhenStuck} 点。<br>
-        <b>Stuck</b>: 消せるペアがなく Add も残っていないと失敗。ハートが 1 つ減り、新しいボードで同じステージに再挑戦。ハートが尽きるとランは終わり、ワールドのはじめから再開。<br>
-        <b>パーフェクト</b>: Add なしでClearするとボーナススコアとハート回復を得る。スターは Add 0 回で ★★★、1 回で ★★、2 回以上で ★をゲットできる。<br>
-        <span class="ex">すべてのボードは、Add なしで全消しできることを確認済み。</span>
+        <b>消し方</b>: 1 つ目の数字をタップし、2 つ目をタップする。Pair でなければ 2 つ目が選び直しになる。<br>
+        <b>Score</b>: 1 Pair ${c.score.pairBase} 点が基本。<span class="ex">難しい消し方</span>ほど加点: 間の空マス 1 つごとに +${c.score.gapPerCell}(他を消して初めて通った道)、行をまたぐと +${c.score.wrap}、斜めは +${c.score.diagonal}、縦は +${c.score.vertical}。<br>
+        <b>Chain</b>: 消すたびに Score の倍率 +${c.chain.step}(最大 ×${c.chain.max})。Add か Hint を使うと途切れて ×1.0 に戻る。${c.chain.decayGraceMs / 1000} 秒消さないでいると、${c.chain.decayStepMs / 1000} 秒ごとに 1 つずつ減る(ゲージ)。<br>
+        <b>FEVER</b>: 倍率が ×${c.chain.max} に達すると ${c.fever.durationMs / 1000} 秒間 Score ×${c.fever.pointMult}。その間 Chain は減らない。終わると Chain は半分になる。<br>
+        <b>Speed</b>: 前の消去から ${c.speed.quickMs / 1000} 秒以内なら QUICK(×${c.speed.quickMult})、${c.speed.fastMs / 1000} 秒以内なら FAST(×${c.speed.fastMult})。<br>
+        <b>Line</b>: 1 行まるごと空になるとその行が Board から消え、${c.score.rowClear} 点 × 行数の 2 乗 × 倍率。<br>
+        <b>Add</b>: Board に残っている数字を、読む順番のまま末尾に書き足す。使える回数は Stage ごとに決まっている。<br>
+        <b>Hint</b>: 消せる Pair を 1 つ光らせる。Chain は途切れる。<br>
+        <b>詰み</b>: 消せる Pair が無くなってもゲームは教えない。詰んでから Add を押せば Chain は半分残る。詰んでいるのに Hint を押すと、途切れたうえに −${c.score.hintWhenStuck} 点。<br>
+        <b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP になる。押すと Heart −1 だが、Stage 得点の半分は残る。それに気づかず Hint を押すと Heart −1、Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。<br>
+        <b>Heart</b>: 3 つ。尽きると Run は終わり、World のはじめから再開。<br>
+        <b>Clear</b>: Clear Bonus +${c.score.stageClear}。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
+        <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。<br>
+        <span class="ex">すべての Board は、Add なしで全消しできることを確認済み。</span>
       </div>
-      <div class="actions"><button class="btn btn-primary" id="ov-back">もどる</button></div>`);
+      <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
     card.querySelector('#ov-back').onclick = showTitle;
   }
 
@@ -360,13 +426,13 @@ async function boot() {
       <div class="eyebrow">menu</div>
       <h1>Pause</h1>
       <div class="actions">
-        <button class="btn btn-primary" id="ov-back">ゲームにもどる</button>
-        <button class="btn btn-ghost" id="ov-sound">サウンド: ${sound.enabled ? 'ON' : 'OFF'}</button>
+        <button class="btn btn-primary" id="ov-back">Resume</button>
+        <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
-        <button class="btn btn-ghost" id="ov-title">タイトルへ</button>
-        ${inPlay ? '<button class="btn btn-danger" id="ov-giveup">このステージをあきらめる(ハート −1)</button>' : ''}
+        <button class="btn btn-ghost" id="ov-title">Title へ</button>
+        ${inPlay ? '<button class="btn btn-danger" id="ov-giveup">GIVE UP(Heart −1 · 得点は半分残る)</button>' : ''}
       </div>`);
-    card.querySelector('#ov-back').onclick = () => ui.hideOverlay();
+    card.querySelector('#ov-back').onclick = () => { game.resume(Date.now()); ui.hideOverlay(); };
     card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showMenu(); };
     card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showMenu; };
     card.querySelector('#ov-title').onclick = showTitle;
@@ -376,13 +442,12 @@ async function boot() {
   // ---------- 入力 ----------
   ui.board.addEventListener('pointerdown', (e) => {
     const el = e.target.closest('.cell');
-    if (!el || busy) return;
-    if (document.getElementById('overlay').hidden === false) return;
+    if (!el || busy || overlayOpen()) return;
     sound.ensure();
-    handle(game.tap(Number(el.dataset.pos)));
+    handle(game.tap(Number(el.dataset.pos), Date.now()));
   });
-  document.getElementById('btn-add').onclick = () => { if (!busy) { sound.ensure(); handle(game.useAdd()); } };
-  document.getElementById('btn-hint').onclick = () => { if (!busy) { sound.ensure(); handle(game.useHint()); } };
+  document.getElementById('btn-add').onclick = () => { if (!busy && !overlayOpen()) { sound.ensure(); handle(game.useAdd(Date.now())); } };
+  document.getElementById('btn-hint').onclick = () => { if (!busy && !overlayOpen()) { sound.ensure(); handle(game.useHint()); } };
   document.getElementById('btn-menu').onclick = showMenu;
   soundLabel();
 

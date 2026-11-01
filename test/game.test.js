@@ -20,7 +20,7 @@ function memoryStorage() {
 }
 const fresh = () => new Game(stages, CONFIG, memoryStorage());
 
-test('stages.json: 30 ステージ、各 3 ボード、マス数は偶数で 2 ずつ増える、par 0', () => {
+test('stages.json: 30 Stage、各 3 Board、マス数は偶数で 2 ずつ増える、par 0', () => {
   assert.equal(stages.length, 30);
   for (const [k, s] of stages.entries()) {
     assert.equal(s.boards.length, 3, `stage ${s.stage}`);
@@ -33,7 +33,7 @@ test('stages.json: 30 ステージ、各 3 ボード、マス数は偶数で 2 �
   }
 });
 
-test('選択 → ペアを消す → 得点(基礎点+道のボーナス)×倍率、チェーン', () => {
+test('選択 → Pair を消す → 得点(基礎点+道の Bonus)×倍率、Chain', () => {
   const g = fresh();
   g.newRun(0);
   const [i, j] = validPairs(g.stage.board)[0];
@@ -43,13 +43,13 @@ test('選択 → ペアを消す → 得点(基礎点+道のボーナス)×倍�
   assert.equal(evs[0].type, 'remove');
   assert.equal(evs[0].chain, 1);
   assert.equal(evs[0].mult, 1 + CONFIG.chain.step);
-  assert.equal(evs[0].speed, null);            // 最初の消去に速さボーナスは無い
+  assert.equal(evs[0].speed, null);            // 最初の消去に速さ Bonus は無い
   assert.equal(evs[0].pairPoints, Math.round((CONFIG.score.pairBase + expectedBonus) * (1 + CONFIG.chain.step)));
   assert.equal(g.run.score, evs[0].points);
   assert.equal(g.stage.selected, null);
 });
 
-test('速さボーナス: 前の消去から 1 秒以内は FAST、倍率が掛かる', () => {
+test('速さ Bonus: 前の消去から 1 秒以内は FAST、倍率が掛かる', () => {
   const g = fresh();
   g.newRun(0);
   let t = 1000;
@@ -70,7 +70,51 @@ test('倍率は上限で止まる', () => {
   assert.equal(g.multiplierFor(1000), CONFIG.chain.max);
 });
 
-test('ペアにならない 2 つ: invalid と選択の移動', () => {
+test('Chain ゲージ: 猶予のあと時間で Chain が減り、ゲージの値が追える', () => {
+  const g = fresh();
+  g.newRun(0);
+  const t0 = 10000;
+  const [i, j] = validPairs(g.stage.board)[0];
+  g.tap(i, t0); g.tap(j, t0);
+  g.stage.chain = 5;
+  assert.equal(g.gaugeRatio(t0), 1);
+  assert.equal(g.tick(t0 + CONFIG.chain.decayGraceMs - 1).length, 0);      // 猶予の中では減らない
+  const e1 = g.tick(t0 + CONFIG.chain.decayGraceMs + 1);
+  assert.equal(e1[0].type, 'chainDecay');
+  assert.equal(g.stage.chain, 4);
+  assert.equal(g.tick(t0 + CONFIG.chain.decayGraceMs + 10).length, 0);     // 同じ段では二度減らない
+  g.tick(t0 + CONFIG.chain.decayGraceMs + CONFIG.chain.decayStepMs * 2 + 1);
+  assert.equal(g.stage.chain, 2);
+  g.tick(t0 + CONFIG.chain.decayGraceMs + CONFIG.chain.decayStepMs * 10);
+  assert.equal(g.stage.chain, 0);
+  assert.equal(g.gaugeRatio(t0 + 99999), 0);
+});
+
+test('FEVER: 倍率が上限に達すると始まり、得点 ×2、時間で終わって Chain が半分になる', () => {
+  const g = fresh();
+  g.newRun(0);
+  const t0 = 5000;
+  g.stage.board = [5, 5, 1, 9, 2, 8, 3, 7, 4, 6, 5, 5];
+  g.stage.chain = 17;                                       // 次の消去で倍率 ×10
+  let evs = g.tap(0, t0).concat(g.tap(1, t0));
+  assert.ok(evs.some((e) => e.type === 'feverStart'));
+  assert.equal(g.inFever, true);
+  assert.equal(g.feverRatio(t0), 1);
+  // FEVER 中の得点は 2 倍
+  const ev = g.tap(2, t0 + 100).concat(g.tap(3, t0 + 100)).find((e) => e.type === 'remove');
+  assert.equal(ev.fever, true);
+  const bonus = difficultyBonus(CONFIG.score, ev.path).bonus;
+  assert.equal(ev.pairPoints, Math.round((CONFIG.score.pairBase + bonus) * CONFIG.chain.max * CONFIG.speed.fastMult * CONFIG.fever.pointMult));
+  // FEVER 中は Chain が減らない
+  assert.equal(g.tick(t0 + 9000).length, 0);
+  // 終わり
+  const end = g.tick(t0 + CONFIG.fever.durationMs + 1);
+  assert.equal(end[0].type, 'feverEnd');
+  assert.equal(g.inFever, false);
+  assert.equal(g.stage.chain, Math.floor(19 * CONFIG.fever.endChainRatio));
+});
+
+test('Pair にならない 2 つ: invalid と選択の移動', () => {
   const g = fresh();
   g.newRun(0);
   const b = g.stage.board;
@@ -83,7 +127,7 @@ test('ペアにならない 2 つ: invalid と選択の移動', () => {
   assert.equal(g.stage.selected, p + 1);
 });
 
-test('Add: ペアが残っているのに押すとチェーンが途切れる', () => {
+test('Add: Pair が残っているのに押すと Chain が途切れる', () => {
   const g = fresh();
   g.newRun(0);
   const [i, j] = validPairs(g.stage.board)[0];
@@ -99,44 +143,57 @@ test('Add: ペアが残っているのに押すとチェーンが途切れる', 
   assert.equal(g.stage.addsUsed, 1);
 });
 
-test('詰み: ゲームは教えない。Add は控えめ(チェーン半分)、Hint は途切れて減点', () => {
+test('詰み: ゲームは教えない。Add は控えめ(Chain 半分)、Hint は途切れて減点', () => {
   const g = fresh();
   g.newRun(0);
   g.stage.chain = 6;
   g.stage.stageScore = 500; g.run.score = 500;
-  g.stage.board = [1, 2, 3];          // ペアが無い
-  // 消去後の判定は詰みを知らせない(stuck イベントなし)
+  g.stage.board = [1, 2, 3];          // Pair が無い
   assert.equal(g.afterBoardChange().length, 0);
-  // Hint: 途切れて減点
   const h = g.useHint();
   assert.equal(h[0].type, 'noHint');
+  assert.equal(h[0].blind, false);
   assert.equal(h[0].penalty, CONFIG.score.hintWhenStuck);
   assert.equal(g.stage.chain, 0);
   assert.equal(g.run.score, 500 - CONFIG.score.hintWhenStuck);
-  // Add: 詰みなのでチェーンの半分が残る
   g.stage.chain = 6;
   const a = g.useAdd();
   assert.equal(a[0].stuckBefore, true);
   assert.equal(a[0].chainAfter, Math.floor(6 * CONFIG.stuck.addKeepRatio));
 });
 
-test('詰み + Add 無し: Hint か Add を押した時点で失敗', () => {
+test('Add が尽きたあと: GIVE UP は Stage 得点の半分を残す、気づかずの Hint は全部失ってさらに減点', () => {
+  // GIVE UP(ADD ボタンの位置、useAdd 経由)
   const g = fresh();
   g.newRun(0);
-  g.stage.board = [1, 2, 3];
   g.stage.addsLeft = 0;
+  g.run.score = 2000; g.stage.stageScore = 800;
   const evs = g.useAdd();
   assert.equal(evs[0].type, 'stageFailed');
-  assert.equal(evs[0].reason, 'stuck');
+  assert.equal(evs[0].reason, 'giveUp');
+  assert.equal(evs[0].kept, 400);
+  assert.equal(evs[0].lost, 400);
+  assert.equal(g.run.score, 1600);
+  assert.equal(g.run.lives, 2);
+  // 気づかずの Hint
   const g2 = fresh();
   g2.newRun(0);
   g2.stage.board = [1, 2, 3];
   g2.stage.addsLeft = 0;
+  g2.run.score = 2000; g2.stage.stageScore = 800;
   const evs2 = g2.useHint();
   assert.deepEqual(evs2.map((e) => e.type), ['noHint', 'stageFailed']);
+  assert.equal(evs2[0].blind, true);
+  assert.equal(evs2[1].reason, 'blindHint');
+  assert.equal(g2.run.score, 2000 - 800 - CONFIG.score.blindHintPenalty);
+  // Pair が残っていて Add も無いときの Hint は普通の Hint
+  const g3 = fresh();
+  g3.newRun(0);
+  g3.stage.addsLeft = 0;
+  assert.equal(g3.useHint()[0].type, 'hint');
 });
 
-test('Hint: ペアがあれば 1 つ返し、チェーンが途切れる', () => {
+test('Hint: Pair があれば 1 つ返し、Chain が途切れる', () => {
   const g = fresh();
   g.newRun(0);
   g.stage.chain = 3;
@@ -149,7 +206,7 @@ test('Hint: ペアがあれば 1 つ返し、チェーンが途切れる', () =>
   assert.ok(remove.some((e) => e.type === 'remove'));
 });
 
-// 常に先頭のペアを消す「貪欲」なプレイ。詰まったら Add、Add も無ければ Add を押して失敗になる。
+// 常に先頭の Pair を消す「貪欲」なプレイ。詰まったら Add、Add も無ければ GIVE UP になる。
 function playGreedy(g) {
   let guard = 2000;
   while (g.stage.status === 'play' && guard-- > 0) {
@@ -160,7 +217,7 @@ function playGreedy(g) {
   }
 }
 
-test('貪欲プレイでステージを終えると clear か failed のどちらかになる', () => {
+test('貪欲プレイで Stage を終えると clear か failed のどちらかになる', () => {
   const g = fresh();
   g.newRun(0);
   playGreedy(g);
@@ -168,13 +225,14 @@ test('貪欲プレイでステージを終えると clear か failed のどち�
   if (g.stage.status === 'clear') {
     assert.ok(isCleared(g.stage.board));
     assert.ok(g.progress.stars[1] >= 1);
+    assert.ok(['S', 'A', 'B', 'C'].includes(g.progress.ranks[1]));
     assert.equal(g.progress.maxStage, 1);
   }
 });
 
-test('あきらめる → ハート減少 → 3 回でラン終了、再開地点はワールドのはじめ', () => {
+test('GIVE UP → Heart 減少 → 3 回で Run 終了、再開地点は World のはじめ', () => {
   const g = fresh();
-  g.newRun(6);                       // ワールド 2 の 2 つ目(stage 7)
+  g.newRun(6);                       // World 2 の 2 つ目(stage 7)
   const e1 = g.giveUp();
   assert.equal(e1[0].type, 'stageFailed');
   assert.equal(g.run.lives, 2);
@@ -187,18 +245,21 @@ test('あきらめる → ハート減少 → 3 回でラン終了、再開地�
   assert.equal(g.progress.attempts[7], 3);
 });
 
-test('保存と復元: 同じストレージから作り直すとランが戻る', () => {
+test('保存と復元: 同じストレージから作り直すと Run が戻る。resume で時間の影響を消す', () => {
   const storage = memoryStorage();
   const g = new Game(stages, CONFIG, storage);
   g.newRun(0);
   const [i, j] = validPairs(g.stage.board)[0];
-  g.tap(i); g.tap(j);
+  g.tap(i, 1000); g.tap(j, 1000);
   const g2 = new Game(stages, CONFIG, storage);
   assert.deepEqual(g2.stage.board, g.stage.board);
   assert.equal(g2.run.score, g.run.score);
+  g2.resume(999999);
+  assert.equal(g2.tick(999999 + 100).length, 0);           // 離れていた時間では減らない
+  assert.equal(g2.gaugeRatio(999999), 1);
 });
 
-test('パーフェクトクリアでハート回復・スター 3', () => {
+test('Perfect Clear: Heart 回復・Star 3・温存 Bonus・Rank', () => {
   const g = fresh();
   g.newRun(0);
   g.run.lives = 1;
@@ -209,10 +270,25 @@ test('パーフェクトクリアでハート回復・スター 3', () => {
   assert.equal(clear.perfect, true);
   assert.equal(clear.stars, 3);
   assert.equal(clear.lifeGain, 1);
+  assert.equal(clear.savedBonus, stages[0].adds * CONFIG.score.addSaved);
+  assert.equal(clear.rank, g.rankFor(clear.stageScore));
+  assert.equal(g.progress.ranks[1], clear.rank);
   assert.equal(g.run.lives, 2);
   const next = g.nextStage();
   assert.equal(next[0].type, 'stageStart');
   assert.equal(g.run.stageIndex, 1);
+});
+
+test('Rank: 基準点との比で S / A / B / C', () => {
+  const g = fresh();
+  g.newRun(0);
+  const par = stages[0].cellsCount * CONFIG.rank.perCell;
+  assert.equal(g.rankFor(par * CONFIG.rank.S), 'S');
+  assert.equal(g.rankFor(par * CONFIG.rank.A), 'A');
+  assert.equal(g.rankFor(par * CONFIG.rank.B), 'B');
+  assert.equal(g.rankFor(0), 'C');
+  g.progress.ranks = { 1: 'S', 2: 'A', 3: 'S' };
+  assert.deepEqual(g.rankCounts, { S: 2, A: 1, B: 0, C: 0 });
 });
 
 test('行消しは倍率が掛かる', () => {

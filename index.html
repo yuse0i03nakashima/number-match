@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>TEN — Number Match</title>
+  <title>THE TEN — Number Match</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -30,26 +30,34 @@
         <div class="score" id="hud-score">0</div>
       </div>
       <div class="hud-right">
-        <div class="lives" id="hud-lives" aria-label="ライフ"></div>
-        <div class="chain" id="hud-chain">
+        <div class="lives" id="hud-lives" aria-label="Heart"></div>
+        <div class="chain" id="hud-chain" aria-label="Chain">
           <span class="chain-mult" id="hud-mult">×1.0</span>
-          <span class="chain-bar"><span class="chain-fill" id="hud-chain-fill"></span></span>
+          <span class="chain-bars">
+            <span class="chain-bar"><span class="chain-fill" id="hud-chain-fill"></span></span>
+            <span class="gauge-bar" title="Chain gauge"><span class="gauge-fill" id="hud-gauge-fill"></span></span>
+          </span>
         </div>
       </div>
     </header>
 
+    <div class="fever" id="hud-fever" hidden>
+      <span class="fever-label">FEVER ×2</span>
+      <span class="fever-bar"><span class="fever-fill" id="hud-fever-fill"></span></span>
+    </div>
+
     <section class="board-wrap" id="board-wrap">
-      <div class="board" id="board" role="grid" aria-label="ボード面"></div>
+      <div class="board" id="board" role="grid" aria-label="Board"></div>
     </section>
 
     <footer class="controls">
       <button class="ctl" id="btn-hint" type="button">
         <span class="ctl-label">HINT</span>
-        <span class="ctl-sub">チェーン切れ</span>
+        <span class="ctl-sub">Chain が途切れる</span>
       </button>
       <button class="ctl ctl-primary" id="btn-add" type="button">
-        <span class="ctl-label">＋ ADD</span>
-        <span class="ctl-sub" id="add-stock" aria-label="追加の残り"></span>
+        <span class="ctl-label" id="btn-add-label">＋ ADD</span>
+        <span class="ctl-sub" id="add-stock" aria-label="Add の残り"></span>
       </button>
       <button class="ctl" id="btn-menu" type="button">
         <span class="ctl-label">MENU</span>

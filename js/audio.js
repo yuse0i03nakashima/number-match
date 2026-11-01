@@ -87,12 +87,28 @@ export class Sound {
     this.noise({ dur: 0.08, gain: 0.08, from: 1500, to: 600 });
   }
 
-  // 行が消えた: 和音をアルペジオで
-  rowClear(count = 1) {
-    const base = 4 + Math.min(count, 3) * 2;
-    [0, 1, 2, 4].forEach((k, n) => this.tone(noteFreq(base + k), { type: 'triangle', dur: 0.5, gain: 0.45, when: n * 0.05 }));
-    this.noise({ dur: 0.35, gain: 0.18, from: 300, to: 3000 });
+  // 行が消えた: 和音をアルペジオで。連続(streak)で消すほど構成音が増え、音域も上がる
+  rowClear(count = 1, streak = 0) {
+    const base = 4 + Math.min(count, 3) * 2 + Math.min(streak, 4);
+    const voicing = [0, 1, 2, 4, 5, 7, 9].slice(0, 4 + Math.min(streak, 3));
+    voicing.forEach((k, n) => {
+      this.tone(noteFreq(base + k), { type: 'triangle', dur: 0.55 + streak * 0.05, gain: 0.42, when: n * 0.045 });
+      if (streak >= 2) this.tone(noteFreq(base + k) / 2, { type: 'sine', dur: 0.6, gain: 0.18, when: n * 0.045 });
+    });
+    this.noise({ dur: 0.35 + streak * 0.05, gain: 0.18 + streak * 0.03, from: 300, to: 3000 });
   }
+
+  // Chain が時間で 1 つ減った: 低く短い音
+  chainDecay() { this.tone(noteFreq(1) / 2, { type: 'sine', dur: 0.15, gain: 0.14, lowpass: 900 }); }
+
+  feverStart() {
+    [0, 4, 7, 12, 16, 19, 24].forEach((k, n) => this.tone(noteFreq(5) * Math.pow(2, k / 12), { type: 'triangle', dur: 0.5, gain: 0.35, when: n * 0.06 }));
+    this.noise({ dur: 0.8, gain: 0.25, from: 200, to: 4000 });
+  }
+  feverEnd() {
+    [7, 4, 0].forEach((k, n) => this.tone(noteFreq(8) * Math.pow(2, k / 12), { type: 'sine', dur: 0.4, gain: 0.25, when: n * 0.12 }));
+  }
+  giveUp() { [5, 3].forEach((k, n) => this.tone(noteFreq(k), { type: 'triangle', dur: 0.5, gain: 0.3, when: n * 0.2, lowpass: 1200 })); }
 
   invalid() { this.tone(110, { type: 'sine', dur: 0.12, gain: 0.25, lowpass: 600 }); }
 
