@@ -48,3 +48,27 @@ test('World の終わり(Stage 5)で worldEnd になる。失敗後の Retry は
   assert.equal(g2.stage.chain, 0);
   assert.equal(g2.stage.fever, null);
 });
+
+test('DIGIT CLEAR: ある数字を消し切ると 1 つごとに Bonus、まだ残っていれば無し', () => {
+  const g = new Game(stages, CONFIG, memoryStorage());
+  g.newRun(0);
+  g.stage.board = [3, 3, 7, 1, 9, 0, 0, 0, 0, 5, 5];
+  // 3 と 3 を消す: 3 が Board から消え切る → 1 つ
+  let ev = g.tap(0, 1000).concat(g.tap(1, 1000)).find((e) => e.type === 'remove');
+  assert.deepEqual(ev.digitsCleared, [3]);
+  assert.equal(ev.digitPoints, Math.round(CONFIG.score.digitClear * 1 * ev.mult));
+  assert.equal(ev.points, ev.pairPoints + ev.rowPoints + ev.digitPoints);
+  // 1 と 9 を消す: どちらも消え切る → 2 つ
+  ev = g.tap(3, 2000).concat(g.tap(4, 2000)).find((e) => e.type === 'remove');
+  assert.deepEqual(ev.digitsCleared, [1, 9]);
+  assert.equal(ev.digitPoints, Math.round(CONFIG.score.digitClear * 2 * ev.mult));
+  // 5 と 5: 7 が残っているので全消しではないが、5 は消え切る
+  ev = g.tap(9, 3000).concat(g.tap(10, 3000)).find((e) => e.type === 'remove');
+  assert.deepEqual(ev.digitsCleared, [5]);
+  const g2 = new Game(stages, CONFIG, memoryStorage());
+  g2.newRun(0);
+  g2.stage.board = [3, 3, 3, 7];
+  ev = g2.tap(0).concat(g2.tap(1)).find((e) => e.type === 'remove');
+  assert.deepEqual(ev.digitsCleared, []);                 // 3 がまだ残っている
+  assert.equal(ev.digitPoints, 0);
+});

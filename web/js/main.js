@@ -237,6 +237,16 @@ async function boot() {
         fx.floatText(mx, my + 30, `${ev.chain} CHAIN  ×${ev.mult.toFixed(1)}`, { color: PALETTE.white, size: 16, dy: -30, life: 1.3 });
       }
     }
+    if (ev.digitsCleared.length > 0 && ci && cj) {
+      const target = ui.scoreCenter();
+      ev.digitsCleared.forEach((d, k) => {
+        fx.floatText(mx, my - 70 - k * 26, `NO MORE ${d}  +${ev.digitPoints / ev.digitsCleared.length}`, { color: PALETTE.purple, size: 20, dy: -50, life: 1.6 });
+      });
+      fx.ring(mx, my, PALETTE.purple, 90);
+      fx.burst(mx, my, { color: PALETTE.purple, count: 30, power: 1.2, size: 3.5 });
+      fx.flyText(mx, my - 40, target.x, target.y, `+${ev.digitPoints}`, { color: PALETTE.purple, size: 18, dur: 0.6, delay: 0.3 });
+      sound.digitClear(ev.digitsCleared.length);
+    }
     ui.markRemoving(ev.i, ev.j);
     sound.remove(ev.chain, ev.heat);
     vibrate(12 + Math.round(ev.heat * 20));
@@ -305,7 +315,7 @@ async function boot() {
     if (ev.chain > 0) fx.floatText(cx, cy + 76, `CHAIN ×${ev.mult.toFixed(1)} を持ち越し`, { color: heatColor(game.heat), size: 14, dy: -24, life: 2.0 });
     if (ev.lifeGain) { ui.renderLives(game.run.lives, CONFIG.lives.max, { gained: true }); sound.lifeGain(); }
     ui.renderHud(game);
-    if (!ev.worldEnd && !ev.isLast) {
+    if (CONFIG.flow.continueAfterClear && !ev.worldEnd && !ev.isLast) {
       // 続けて次の Stage へ(Result の画面は World の終わりだけ)
       await sleep(CONFIG.flow.autoNextMs);
       busy = false;
@@ -485,6 +495,7 @@ async function boot() {
         <b>Chain</b>: Pair を消すたびに Chain 倍率が +${c.chain.step}(最大 ×${c.chain.max})。Add を使うと途切れて ×1.0 に戻る。${c.chain.decayGraceMs / 1000} 秒消さないでいると、${c.chain.decayStepMs / 1000} 秒ごとに 1 段階ずつ減る(ゲージ)。<br>
         <b>FEVER</b>: 倍率が ×${c.chain.max} に達すると ${c.fever.durationMs / 1000} 秒間 Score ×${c.fever.pointMult}。その間 Chain は減らない。終わると Chain は半分になる。<br>
         <b>Speed</b>: 前の消去から ${c.speed.quickMs / 1000} 秒以内なら QUICK(×${c.speed.quickMult})、${c.speed.fastMs / 1000} 秒以内なら FAST(×${c.speed.fastMult})。<br>
+        <b>DIGIT CLEAR</b>: ある数字(たとえば 3)を Board から全部消し切ると、1 つの数字ごとに +${c.score.digitClear} × Chain 倍率。Add で戻ってきたらまた狙える。<br>
         <b>Line</b>: 1 行まるごと空になるとその行が Board から消え、${c.score.rowClear} 点 × (同時に消えた行数の 2 乗) × Chain 倍率が加算される。<br>
         <b>Add</b>: Board に残っている数字と同じ数字を末尾に書き足す。並びは、足したあとの Board が Add なしで全消しできることを確かめたうえで選ぶ(確かめられないときは残っている順)。使える回数は Stage ごとに決まっている。<br>
         <b>Hint</b>(使用上限 Stage ごとに ${h.perStage} 回。Chain 倍率で中身が変わる):<br>
