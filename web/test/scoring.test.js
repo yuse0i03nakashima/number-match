@@ -44,3 +44,21 @@ test('speedTier: 速いほど倍率が高い', () => {
   assert.deepEqual(speedTier(CONFIG.speed, 5000), { tier: null, mult: 1 });
   assert.deepEqual(speedTier(CONFIG.speed, Infinity), { tier: null, mult: 1 });
 });
+
+test('sightLines: 縦・斜め・読み順に目を走らせ、空マスは ray、最初の数字は reach', async () => {
+  const { sightLines } = await import('../js/scoring.js');
+  // 3 行。中央(pos 13)から見る。右上 (5) は空、その先 (…) は盤外。左上 (3) は 7。
+  const board = [
+    1, 2, 3, 7, 5, 0, 7, 8, 9,
+    1, 2, 3, 0, 5, 0, 7, 8, 9,
+    1, 2, 3, 4, 0, 6, 7, 8, 9,
+  ];
+  const s = sightLines(board, 13);
+  assert.ok(s.reach.includes(4));      // 真上
+  assert.ok(s.ray.includes(22));       // 真下は空 → ray(その先は盤外)
+  assert.ok(s.reach.includes(3));      // 左上の 7
+  assert.ok(s.ray.includes(5) && !s.reach.includes(5));   // 右上は空、その先は盤外
+  assert.ok(s.ray.includes(12) && s.reach.includes(11));  // 読み順で左: 空を越えて 3
+  assert.ok(s.ray.includes(14) && s.reach.includes(15));              // 右隣は空、その先の 7
+  assert.ok(s.reach.includes(23) && s.reach.includes(21));            // 右下 6、左下 4
+});

@@ -10,6 +10,7 @@
   --surface3:#222536;
   --border:#252838;
   --border-light:#2f3347;
+  --cell-border:#3b4058;          /* マスの枠(斜めの並びが読めるよう、少し明るめ) */
 
   --text:#dde1ec;
   --text-muted:#9aa3b8;
@@ -159,7 +160,7 @@ body.fever .hud, body.fever .controls { border-color:rgba(240,98,146,0.5); }
   padding-bottom:40px;
 }
 .cell {
-  appearance:none; border:1px solid var(--border); background:var(--surface);
+  appearance:none; border:1px solid var(--cell-border); background:var(--surface);
   color:var(--text); font-family:var(--font-mono); font-weight:500;
   font-size:calc(var(--cell) * 0.62); line-height:1;
   display:flex; align-items:center; justify-content:center;
@@ -168,9 +169,12 @@ body.fever .hud, body.fever .controls { border-color:rgba(240,98,146,0.5); }
 }
 .cell:active { transform:scale(0.92); }
 .cell.empty {
-  background:transparent; border-color:var(--border); border-style:dashed; opacity:0.35;
+  background:transparent; border-color:var(--cell-border); border-style:dashed; opacity:0.5;
   cursor:default; color:transparent;
 }
+/* 視線: 選んだマスから縦・斜め・読み順に見える先。ray は途中の空マス、reach は最初にぶつかる数字 */
+.cell.empty.ray { opacity:0.9; border-style:solid; border-color:color-mix(in srgb, var(--heat) 55%, var(--cell-border)); background:color-mix(in srgb, var(--heat) 10%, transparent); }
+.cell.reach { border-color:color-mix(in srgb, var(--heat) 70%, var(--cell-border)); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--heat) 35%, transparent); }
 .cell.selected {
   background:var(--surface3); border-color:var(--heat); color:#fff;
   box-shadow:0 0 0 1px var(--heat), 0 0 16px color-mix(in srgb, var(--heat) 55%, transparent);

@@ -98,17 +98,19 @@ async function boot() {
     for (const ev of events) {
       switch (ev.type) {
         case 'select': {
-          ui.selectCell(ev.pos);
+          ui.selectCell(ev.pos, game.stage.board);
           sound.select(); vibrate(8);
           break;
         }
         case 'deselect': {
           ui.cellEl(ev.pos)?.classList.remove('selected');
+          ui.clearSight();
           sound.deselect();
           break;
         }
         case 'invalid': {
           ui.cellEl(ev.from)?.classList.remove('selected');
+          ui.clearSight();
           ui.shakeCell(ev.to);
           sound.invalid(); vibrate([20, 30, 20]);
           break;
