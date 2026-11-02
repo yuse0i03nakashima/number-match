@@ -7,8 +7,8 @@ import { Game } from './game.js';
 import { Renderer } from './render.js';
 import { FX, heatColor, PALETTE } from './fx.js';
 import { Sound, vibrate } from './audio.js';
-import { Bgm } from './bgm.js';
 import { Music } from './music.js';
+import { analyzeStage } from './review.js';
 import { WIDTH, validPairs } from './rules.js';
 
 const fmt = (n) => n.toLocaleString('en-US');
@@ -22,27 +22,26 @@ async function boot() {
   const ui = new Renderer(document);
   const fx = new FX(document.getElementById('fx'), CONFIG.fx);
   const sound = new Sound(CONFIG.audio.masterVolume);
-  // BGM は 2 系統: 生成(music.js)と mp3(bgm.js)。メニューで SYNTH / TRACK / OFF を切り替える
-  const track = new Bgm(CONFIG.bgm);
+  // BGM は生成(music.js)。メニューで SYNTH / OFF を切り替える
   const synth = new Music({ volume: CONFIG.bgm.synthVolume, tonic: CONFIG.bgm.tonic, bpm: CONFIG.bgm.bpm });
   const loadBgmMode = () => { try { return localStorage.getItem('numbermatch.bgmMode') ?? CONFIG.bgm.mode; } catch { return CONFIG.bgm.mode; } };
   const bgm = {
     mode: loadBgmMode(),
-    get active() { return this.mode === 'synth' ? synth : this.mode === 'track' ? track : null; },
-    attach(ctx) { track.attach(ctx); synth.attach(ctx); },
+    get active() { return this.mode === 'synth' ? synth : null; },
+    attach(ctx) { synth.attach(ctx); },
     play() { this.active?.play(); },
-    stop() { synth.stop(); track.stop(); },
-    setHeat(h) { synth.setHeat(h); track.setHeat(h); },
-    setFever(on) { synth.setFever(on); track.setFever(on); },
-    duck(on) { synth.duck(on); track.duck(on); },
+    stop() { synth.stop(); },
+    setHeat(h) { synth.setHeat(h); },
+    setFever(on) { synth.setFever(on); },
+    duck(on) { synth.duck(on); },
     level() { return this.active ? this.active.level() : 0; },
     cycle() {
-      const order = ['synth', 'track', 'off'];
+      const order = ['synth', 'off'];
       this.mode = order[(order.indexOf(this.mode) + 1) % order.length];
       try { localStorage.setItem('numbermatch.bgmMode', this.mode); } catch { /* 無視 */ }
       this.stop();
     },
-    get label() { return this.mode === 'synth' ? 'SYNTH' : this.mode === 'track' ? 'TRACK' : 'OFF'; },
+    get label() { return this.mode === 'synth' ? 'ON' : 'OFF'; },
   };
   // 最初のタップで AudioContext ができたら BGM をつなぐ(ensure は何度呼んでもよい)
   const ensureAudio = () => { if (sound.ensure()) bgm.attach(sound.ctx); };
@@ -339,16 +338,66 @@ async function boot() {
         ${ev.hintBonus ? `<div class="row"><span class="k">Hint 温存 Bonus(${ev.hintsLeft} 回)</span><span class="v plus">+${fmt(ev.hintBonus)}</span></div>` : ''}
         ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
         <div class="row"><span class="k">World の Rank</span><span class="v">${rankSummaryWorld(game.worldOf(game.run.stageIndex))}</span></div>
+        <div class="row"><span class="k">最高倍率(この Stage / Run)</span><span class="v">×${ev.maxMult.toFixed(1)} / ×${ev.runMaxMult.toFixed(1)}</span></div>
         <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
       </div>
       <div class="actions">
         <button class="btn btn-primary" id="ov-next">${ev.isLast ? 'Result を見る' : 'Next World →'}</button>
+        <button class="btn btn-ghost" id="ov-review">感想戦(手の評価)</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
       </div>`);
+    card.querySelector('#ov-review').onclick = () => showReview(() => onStageClear(ev));
     ui.animateStars(card, ev.stars);
     setTimeout(() => { card.querySelector('#ov-rank')?.classList.add('show'); if (ev.rank === 'S') { sound.perfect(); fx.fireworks(4); } }, 1100);
     card.querySelector('#ov-next').onclick = () => { busy = false; handle(game.nextStage(Date.now())); };
     card.querySelector('#ov-title').onclick = () => { busy = false; showTitle(); };
+  }
+
+  // ---------- 感想戦 ----------
+  // 直近の Stage の手を評価して一覧にする。行をタップするとその局面の Board を小さく表示し、
+  // 選んだ手(赤)と最善手(橙)を示す。back() で元の Result に戻る
+  function showReview(back, pick = null) {
+    const reviews = game.run?.reviews ?? [];
+    if (!reviews.length) { ui.toast('記録が無い'); return; }
+    const idx = pick ?? reviews.length - 1;
+    const rev = reviews[idx];
+    const a = analyzeStage(CONFIG, rev.history);
+    const mark = { best: '★', good: '○', missed: '△', blunder: '✖', note: '・' };
+    const rowsHtml = a.moves.map((m, k) => {
+      const head = m.type === 'remove' ? `${m.board[m.i]} と ${m.board[m.j]}  +${m.points}  ×${m.mult.toFixed(1)}` : m.type === 'add' ? 'ADD' : 'HINT';
+      return `<div class="rv-row rv-${m.verdict}" data-k="${k}"><span class="rv-mark">${mark[m.verdict]}</span><span class="rv-head">${k + 1}. ${head}</span><span class="rv-text">${m.text}</span></div>`;
+    }).join('');
+    const tabs = reviews.map((r, k) => `<button class="btn btn-ghost rv-tab ${k === idx ? 'on' : ''}" data-idx="${k}">S${pad2(r.stage)}${r.cleared ? '' : ' ✖'}</button>`).join('');
+    const card = ui.showOverlay(`
+      <div class="eyebrow">review · stage ${pad2(rev.stage)}</div>
+      <h1>感想戦</h1>
+      <div class="ja">★ 最善手　○ 良手　△ もっと得点できた手があった　✖ 悪手(全消しできなくなった / Chain を切った)</div>
+      <div class="rv-tabs">${tabs}</div>
+      <div class="rows">
+        <div class="row"><span class="k">手数 / 最善手</span><span class="v">${a.summary.removes} / ${a.summary.bestCount}</span></div>
+        <div class="row"><span class="k">悪手 / 逃した得点</span><span class="v">${a.summary.blunders} / ${fmt(a.summary.missed)}</span></div>
+        <div class="row"><span class="k">最高倍率 / 行消し / DIGIT CLEAR</span><span class="v">×${a.summary.maxMult.toFixed(1)} / ${a.summary.rowsCleared} / ${a.summary.digitClears}</span></div>
+      </div>
+      <div class="rv-board" id="rv-board"></div>
+      <div class="rv-list">${rowsHtml || '<div class="ja">手の記録が無い</div>'}</div>
+      <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
+    const boardBox = card.querySelector('#rv-board');
+    const showMove = (k) => {
+      const m = a.moves[k];
+      card.querySelectorAll('.rv-row').forEach((r) => r.classList.toggle('on', Number(r.dataset.k) === k));
+      const cells = m.board.map((c, p) => {
+        let cls = 'rv-cell' + (c === 0 ? ' empty' : '');
+        if (m.type === 'remove' && (p === m.i || p === m.j)) cls += ' mine';
+        if (m.best && (p === m.best.i || p === m.best.j)) cls += ' best';
+        return `<span class="${cls}">${c || ''}</span>`;
+      }).join('');
+      boardBox.innerHTML = `<div class="rv-grid">${cells}</div><div class="rv-legend">${m.type === 'remove' ? '<span class="mine">■</span> 選んだ手' : ''}${m.best ? '　<span class="best">■</span> 最善手(+' + m.best.points + ')' : ''}</div>`;
+    };
+    card.querySelectorAll('.rv-row').forEach((r) => r.addEventListener('click', () => showMove(Number(r.dataset.k))));
+    card.querySelectorAll('.rv-tab').forEach((b) => b.addEventListener('click', () => showReview(back, Number(b.dataset.idx))));
+    const firstBad = a.moves.findIndex((m) => m.verdict === 'blunder' || m.verdict === 'missed');
+    if (a.moves.length) showMove(firstBad >= 0 ? firstBad : 0);
+    card.querySelector('#ov-back').onclick = back;
   }
 
   // World の 5 Stage の Rank を並べる
@@ -359,12 +408,14 @@ async function boot() {
 
   async function onStageFailed(ev) {
     busy = true;
-    if (ev.reason === 'giveUp') sound.giveUp(); else sound.fail();
-    vibrate([80, 50, 80]);
-    ui.renderLives(ev.lives + 1, CONFIG.lives.max, { lost: true });
-    fx.flash('rgba(239,68,68,0.18)');
-    fx.shake(ui.boardWrap, 8, 400);
-    await sleep(900);
+    if (!ev._replay) {
+      if (ev.reason === 'giveUp') sound.giveUp(); else sound.fail();
+      vibrate([80, 50, 80]);
+      ui.renderLives(ev.lives + 1, CONFIG.lives.max, { lost: true });
+      fx.flash('rgba(239,68,68,0.18)');
+      fx.shake(ui.boardWrap, 8, 400);
+      await sleep(900);
+    }
     const title = ev.reason === 'giveUp' ? 'Give Up' : ev.reason === 'blindHint' ? 'Stuck' : 'Stuck';
     const text = ev.reason === 'giveUp'
       ? 'Stage をあきらめた。Stage 得点の半分は獲得できる。'
@@ -379,12 +430,15 @@ async function boot() {
         <div class="row"><span class="k">失った Stage 得点</span><span class="v minus">−${fmt(ev.lost)}</span></div>
         ${ev.kept ? `<div class="row"><span class="k">残った Stage 得点</span><span class="v plus">${fmt(ev.kept)}</span></div>` : ''}
         <div class="row"><span class="k">残り Heart</span><span class="v">${'♥'.repeat(ev.lives)}${'♡'.repeat(CONFIG.lives.max - ev.lives)}</span></div>
+        <div class="row"><span class="k">最高倍率</span><span class="v">×${ev.maxMult.toFixed(1)}</span></div>
         <div class="row total"><span class="k">Score</span><span class="v">${fmt(game.run.score)}</span></div>
       </div>
       <div class="actions">
         <button class="btn btn-warn" id="ov-retry">新しい Board で Retry</button>
+        <button class="btn btn-ghost" id="ov-review">感想戦(どこで詰んだか)</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
       </div>`);
+    card.querySelector('#ov-review').onclick = () => showReview(() => onStageFailed({ ...ev, _replay: true }));
     card.querySelector('#ov-retry').onclick = () => { busy = false; handle(game.retryStage()); };
     card.querySelector('#ov-title').onclick = () => { busy = false; showTitle(); };
   }
@@ -403,6 +457,7 @@ async function boot() {
       <div class="ja">Heart が尽きた…${ev.score >= ev.best && ev.score > 0 ? 'Best Score 更新！！' : `Best ${fmt(ev.best)}`}</div>
       <div class="rows">
         <div class="row"><span class="k">到達 Stage</span><span class="v">${pad2(ev.stage)}</span></div>
+        <div class="row"><span class="k">最高倍率</span><span class="v">×${ev.runMaxMult.toFixed(1)}</span></div>
         <div class="row"><span class="k">再開地点</span><span class="v">WORLD ${w} (STAGE ${pad2(ev.resumeStage + 1)})</span></div>
       </div>
       <div class="actions">
