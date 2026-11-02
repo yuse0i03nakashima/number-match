@@ -3,6 +3,7 @@
 
 import { WIDTH } from './rules.js';
 import { heatColor } from './fx.js';
+import { sightLines } from './scoring.js';
 
 export class Renderer {
   constructor(root) {
@@ -38,6 +39,8 @@ export class Renderer {
   renderBoard(board, { selected = null, hintPair = null, flashPairs = null, scopeTile = null, addedFrom = null } = {}) {
     const flashSet = new Set();
     if (flashPairs) for (const [a, b] of flashPairs) { flashSet.add(a); flashSet.add(b); }
+    const sight = selected !== null && board[selected] ? sightLines(board, selected) : null;
+    const raySet = new Set(sight?.ray), reachSet = new Set(sight?.reach);
     const frag = document.createDocumentFragment();
     board.forEach((c, p) => {
       const el = document.createElement('button');
@@ -48,6 +51,8 @@ export class Renderer {
       el.setAttribute('role', 'gridcell');
       if (c === 0) el.tabIndex = -1;
       if (selected === p) el.classList.add('selected');
+      if (raySet.has(p)) el.classList.add('ray');
+      if (reachSet.has(p)) el.classList.add('reach');
       if (hintPair && (hintPair[0] === p || hintPair[1] === p)) el.classList.add('hint');
       if (flashSet.has(p)) el.classList.add('flash');
       if (scopeTile === p) el.classList.add('scope');
@@ -77,12 +82,23 @@ export class Renderer {
     return { y: r.top, h: r.height };
   }
 
-  // 選んだマスを伸び縮みさせる(squash & stretch)
-  selectCell(pos) {
+  // 選んだマスを伸び縮みさせる(squash & stretch)。board を渡すと視線も示す
+  selectCell(pos, board = null) {
     const el = this.cellEl(pos);
     if (!el) return;
     el.classList.remove('selected', 'squash'); void el.offsetWidth;
     el.classList.add('selected', 'squash');
+    this.clearSight();
+    if (board) {
+      const { ray, reach } = sightLines(board, pos);
+      for (const p of ray) this.cellEl(p)?.classList.add('ray');
+      for (const p of reach) this.cellEl(p)?.classList.add('reach');
+    }
+  }
+
+  // 視線の表示(ray / reach)を消す
+  clearSight() {
+    for (const el of this.board.querySelectorAll('.cell.ray, .cell.reach')) el.classList.remove('ray', 'reach');
   }
 
   // 消えるマスにクラスを付ける(アニメ後に renderBoard で作り直す)

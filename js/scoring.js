@@ -2,6 +2,7 @@
 //   pathInfo         … Pair がどの道でつながっているか(種類と、間の空マスの数)
 //   difficultyMult   … その道に応じた倍率とラベル
 //   speedTier        … 前の消去からの時間に応じた倍率とラベル
+//   sightLines       … 選んだマスから見える先(描画の補助。斜めの道を見やすくする)
 
 import { WIDTH, rowOf, colOf, cellAt } from './rules.js';
 
@@ -67,4 +68,31 @@ export function speedTier(speedCfg, elapsedMs) {
   if (elapsedMs < speedCfg.fastMs) return { tier: 'fast', mult: speedCfg.fastMult };
   if (elapsedMs < speedCfg.quickMs) return { tier: 'quick', mult: speedCfg.quickMult };
   return { tier: null, mult: 1 };
+}
+
+/**
+ * 選んだマス pos から、縦・斜めの 6 方向と読み順(前後)に目を走らせ、
+ * 途中の空マス(ray)と最初にぶつかる数字(reach)を返す。
+ * 相手が合うかどうかは見ない(ルール上つながる候補を全部示すだけで、答えは教えない)。
+ */
+export function sightLines(board, pos) {
+  const ray = [], reach = [];
+  const nrows = Math.ceil(board.length / WIDTH);
+  const r0 = rowOf(pos), c0 = colOf(pos);
+  for (const [dr, dc] of [[1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    let r = r0 + dr, c = c0 + dc;
+    while (r >= 0 && r < nrows && c >= 0 && c < WIDTH) {
+      const p = r * WIDTH + c;
+      if (p >= board.length) break;
+      if (board[p] === 0) ray.push(p); else { reach.push(p); break; }
+      r += dr; c += dc;
+    }
+  }
+  // 読み順(横。行末から次の行の先頭へ続く)
+  for (const step of [1, -1]) {
+    for (let p = pos + step; p >= 0 && p < board.length; p += step) {
+      if (board[p] === 0) ray.push(p); else { reach.push(p); break; }
+    }
+  }
+  return { ray, reach };
 }
