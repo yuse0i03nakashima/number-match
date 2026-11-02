@@ -30,6 +30,9 @@
   --font-mono:'DM Mono', 'SFMono-Regular', Consolas, monospace;
 
   --gutter:12px;
+  --grid-x:12px;                    /* 背景の格子の原点(JS が Board の位置に合わせる) */
+  --grid-y:0px;
+  --grid-color:var(--border);
   --cell-gap:4px;
   --cell:48px;                      /* JS が画面幅から再計算 */
   color-scheme:dark;
@@ -53,9 +56,10 @@ body {
 body::after {
   content:''; position:fixed; inset:0;
   background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size:48px 48px;
+    linear-gradient(var(--grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+  background-size:calc(var(--cell) + var(--cell-gap)) calc(var(--cell) + var(--cell-gap));
+  background-position:calc(var(--grid-x) - var(--cell-gap) / 2 - 0.5px) calc(var(--grid-y) - var(--cell-gap) / 2 - 0.5px);
   opacity:calc(0.15 + var(--glow) * 0.2); pointer-events:none; z-index:0;
   transition:opacity 0.4s;
 }
@@ -131,11 +135,28 @@ body.gridflash::after { animation:gridflash 0.45s ease-out; }
 .fever-bar { flex:1; height:4px; background:var(--surface3); overflow:hidden; }
 .fever-fill { display:block; height:100%; width:100%; background:linear-gradient(90deg, var(--rose), var(--amber), var(--purple)); transition:width 0.25s linear; }
 @keyframes fever-pulse { 0%{box-shadow:0 0 6px rgba(240,98,146,0.3)} 100%{box-shadow:0 0 18px rgba(240,98,146,0.7)} }
-body.fever { animation:fever-bg 1.2s ease-in-out infinite alternate; }
+body.fever { --grid-color:rgba(240,98,146,0.55); animation:fever-bg 1.2s ease-in-out infinite alternate; }
 @keyframes fever-bg { 0%{background:#0c0d11} 100%{background:#1a0e1c} }
 body.fever::after { opacity:0.5; animation:fever-grid 0.6s ease-in-out infinite alternate; }
-@keyframes fever-grid { 0%{opacity:0.35} 100%{opacity:0.65} }
+@keyframes fever-grid { 0%{opacity:0.35} 100%{opacity:0.75} }
 body.fever .hud, body.fever .controls { border-color:rgba(240,98,146,0.5); }
+/* FEVER の追加演出(Relax では付けない): 画面の縁の光、マスの枠の色の巡り、Score の脈 */
+body.fever:not(.relax)::before {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:1;
+  box-shadow:inset 0 0 90px 12px rgba(240,98,146,0.32);
+  animation:fever-edge 0.8s ease-in-out infinite alternate;
+}
+@keyframes fever-edge { 0%{box-shadow:inset 0 0 70px 6px rgba(240,98,146,0.22)} 100%{box-shadow:inset 0 0 120px 20px rgba(167,139,250,0.4)} }
+body.fever:not(.relax) .cell:not(.empty) { animation:fever-cell 1.4s ease-in-out infinite alternate; }
+@keyframes fever-cell {
+  0%{border-color:rgba(240,98,146,0.8); text-shadow:0 0 8px rgba(240,98,146,0.6)}
+  50%{border-color:rgba(245,166,35,0.8); text-shadow:0 0 8px rgba(245,166,35,0.6)}
+  100%{border-color:rgba(167,139,250,0.9); text-shadow:0 0 10px rgba(167,139,250,0.7)}
+}
+body.fever:not(.relax) .score { color:var(--rose); animation:fever-score 0.6s ease-in-out infinite alternate; }
+@keyframes fever-score { 0%{transform:scale(1); text-shadow:0 0 6px rgba(240,98,146,0.4)} 100%{transform:scale(1.08); text-shadow:0 0 18px rgba(240,98,146,0.9)} }
+body.fever:not(.relax) .fever-label { animation:fever-label 0.4s steps(2) infinite; }
+@keyframes fever-label { 0%{color:var(--rose)} 100%{color:var(--amber)} }
 
 /* ---------- Board ---------- */
 .board-wrap {

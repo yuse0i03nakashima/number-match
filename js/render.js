@@ -12,7 +12,16 @@ export class Renderer {
     this.board = this.$('board');
     this.boardWrap = this.$('board-wrap');
     this.fitCells();
-    addEventListener('resize', () => this.fitCells());
+    addEventListener('resize', () => { this.fitCells(); this.alignGrid(); });
+    this.boardWrap?.addEventListener('scroll', () => this.alignGrid(), { passive: true });
+  }
+
+  // 背景の格子を Board のマスに合わせる(1 マス + 隙間 を周期にし、線が隙間の真ん中に来るよう原点をずらす)
+  alignGrid() {
+    const r = this.board.getBoundingClientRect();
+    const rs = document.documentElement.style;
+    rs.setProperty('--grid-x', `${r.left}px`);
+    rs.setProperty('--grid-y', `${r.top}px`);
   }
 
   // 画面幅から 1 マスの大きさを決める(9 列が収まる最大、ただし 56px まで)
@@ -63,6 +72,7 @@ export class Renderer {
       frag.appendChild(el);
     });
     this.board.replaceChildren(frag);
+    this.alignGrid();
   }
 
   cellEl(pos) { return this.board.querySelector(`.cell[data-pos="${pos}"]`); }
