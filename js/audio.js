@@ -103,6 +103,13 @@ export class Sound {
     this.noise({ dur: 0.35 + streak * 0.05, gain: 0.18 + streak * 0.03, from: 300, to: 3000 });
   }
 
+  // FEVER 中に Pair を消した: 行消しに近い明るい和音。step が進むほど音階を上がる(8 回で 1 オクターブ)
+  feverHit(step = 0) {
+    const base = 7 + (step % 8);
+    [0, 4, 7, 12].forEach((k, n) => this.tone(noteFreq(base + k), { type: 'triangle', dur: 0.4, gain: 0.3, when: n * 0.035 }));
+    this.noise({ dur: 0.25, gain: 0.12, from: 400, to: 2600 });
+  }
+
   // ある数字を消し切った: 上昇する短いアルペジオ(数字の数だけ重ねる)
   digitClear(count = 1) {
     [0, 4, 7, 11].forEach((k, n) => this.tone(noteFreq(k + 7), { type: 'sine', dur: 0.35, gain: 0.3, when: n * 0.06 }));
