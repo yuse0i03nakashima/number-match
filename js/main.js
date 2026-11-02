@@ -43,13 +43,15 @@ async function boot() {
     },
     get label() { return this.mode === 'synth' ? 'ON' : 'OFF'; },
   };
-  // Relax モード: 時間の要素をなくし、BGM と演出を控えめに
+  // モード(NORMAL / CLASSIC)を画面・音・演出に反映する。CLASSIC は BGM を静かに、揺れと点滅を止め、粒子を減らす
   let fxScale = 1;
-  function applyRelax() {
-    const on = game.relax;
-    synth.setCalm(on ? { bpm: CONFIG.relax.bpm, maxLayers: CONFIG.relax.maxLayers, volume: CONFIG.relax.synthVolume, feverCalm: CONFIG.relax.feverCalm } : null);
-    fxScale = on ? CONFIG.relax.fxScale : 1;
-    document.body.classList.toggle('relax', on);
+  function applyMode() {
+    const on = game.classic;
+    const c = CONFIG.classic;
+    synth.setCalm(on ? { bpm: c.bpm, maxLayers: c.maxLayers, volume: c.synthVolume, feverCalm: c.feverCalm } : null);
+    fxScale = on ? c.fxScale : 1;
+    fx.setCalm(on);
+    document.body.classList.toggle('classic', on);
   }
   // 最初のタップで AudioContext ができたら BGM をつなぐ(ensure は何度呼んでもよい)
   const ensureAudio = () => { if (sound.ensure()) bgm.attach(sound.ctx); };
@@ -74,6 +76,7 @@ async function boot() {
   }
   // 画面全体を一瞬だけ膨らませ、背景の格子を光らせる(大きな出来事の手応え)
   function punch() {
+    if (game.classic) return;
     app.classList.remove('punch'); void app.offsetWidth; app.classList.add('punch');
     document.body.classList.remove('gridflash'); void document.body.offsetWidth; document.body.classList.add('gridflash');
   }
@@ -82,11 +85,11 @@ async function boot() {
   // Chain ゲージと FEVER は時間で動くので、定期的に進めて HUD を描き直す
   setInterval(() => {
     // BGM: Stage 中は Chain の熱と FEVER に合わせ、Title では止める。オーバーレイ中は小さく
-    if (game.stage?.status === 'play' || game.stage?.status === 'clear') { bgm.setHeat(game.relax ? Math.min(0.5, game.heat) : game.heat); bgm.setFever(game.inFever); bgm.play(); }
+    if (game.stage?.status === 'play' || game.stage?.status === 'clear') { bgm.setHeat(game.heat); bgm.setFever(game.inFever); bgm.play(); }
     else if (titleShown) bgm.stop();
     bgm.duck(overlayOpen());
     if (!game.stage || game.stage.status !== 'play' || overlayOpen()) return;
-    if (game.inFever && !game.relax) fx.embers(5);          // FEVER 中は火の粉が立ちのぼる
+    if (game.inFever && !game.classic) fx.embers(5);        // FEVER 中は火の粉が立ちのぼる
     const now = Date.now();
     const events = game.tick(now);
     if (events.length) handle(events);
@@ -140,12 +143,21 @@ async function boot() {
           break;
         }
         case 'noAdds': ui.toast('Add はもう使えない'); sound.invalid(); break;
+        case 'deadEnd': {
+          // CLASSIC: 消せる Pair が無くなったらすぐ知らせる(本家と同じ)
+          lineStreak = 0;
+          redraw();
+          ui.toast(`Dead End: 消せる Pair が無い。ADD で数字を足そう(残り ${ev.addsLeft} 回)`, 3000);
+          sound.stuck(); vibrate([30, 30, 30]);
+          break;
+        }
         case 'noHints': ui.toast('Hint の使用上限に達した'); sound.invalid(); break;
         case 'noHint': {
           // Pair が残っていないのに Hint を押した(Dead End)
           lineStreak = 0;
           redraw();
           if (ev.blind) ui.toast(`Pair はもう無く、Add も無かった… −${fmt(ev.penalty)}`, 3000);
+          else if (game.classic) ui.toast('Pair はもう無い… ADD で数字を足そう', 2400);
           else ui.toast(`Pair はもう無い… −${ev.penalty}、Chain ×${ev.mult.toFixed(1)}　Add で数字を足そう`, 2800);
           fx.flash('rgba(239,68,68,0.15)');
           sound.stuck(); vibrate([30, 30, 30]);
@@ -183,7 +195,9 @@ async function boot() {
           lineStreak = 0;
           sound.add(); vibrate(25);
           redraw({ addedFrom: ev.oldLength });
-          if (ev.stuckBefore && ev.chainBefore > 0) {
+          if (game.classic) {
+            // CLASSIC に Chain は無い
+          } else if (ev.stuckBefore && ev.chainBefore > 0) {
             ui.toast(`Dead End からの Add: Chain は半分残る ×${ev.multBefore.toFixed(1)} → ×${ev.multAfter.toFixed(1)}`, 2200);
           } else if (ev.chainBefore > 0) {
             ui.toast('まだ Pair があった… Chain が途切れた ×1.0', 2200);
@@ -206,6 +220,7 @@ async function boot() {
           redraw();
           ui.boardWrap.scrollTo({ top: 0 });
           if (ev.invest > 0) ui.toast(`前の World で残した Add → 開始 Chain +${ev.invest}`, 2400);
+          if (ev.bonusAdds > 0) ui.toast(`前の World で残した Add → この World の各 Stage で Add +${ev.bonusAdds}`, 2600);
           break;
         }
         case 'quest': {
@@ -252,13 +267,14 @@ async function boot() {
       // 難しい道・速さのラベル(難しさは倍率で表示)
       const labels = [...ev.labels];
       if (ev.diffMult > 1) labels.unshift(`×${ev.diffMult.toFixed(2).replace(/0$/, '')}`);
+      if (ev.pathBonus > 0) labels.unshift(`+${ev.pathBonus}`);
       if (ev.speed === 'fast') labels.push('FAST!!');
       else if (ev.speed === 'quick') labels.push('QUICK');
       labels.forEach((text, k) => {
         const lc = text === 'FAST!!' ? PALETTE.rose : text === 'QUICK' ? PALETTE.amber : text === 'LONG SHOT' || text === 'DIAGONAL SNIPE' ? PALETTE.purple : text === 'SCOPE' || text === 'HINTED' ? PALETTE.red : text.startsWith('×') ? PALETTE.white : PALETTE.green;
         fx.floatText(mx, my - 36 - k * 22, text, { color: lc, size: 15 + (text === 'FAST!!' ? 4 : 0), dy: -45, life: 1.1 });
       });
-      if (ev.chain >= 5 && ev.chain % 5 === 0) {
+      if (!ev.classic && ev.chain >= 5 && ev.chain % 5 === 0) {
         fx.floatText(mx, my + 30, `${ev.chain} CHAIN  ×${ev.mult.toFixed(1)}`, { color: PALETTE.white, size: 16, dy: -30, life: 1.3 });
       }
     }
@@ -276,7 +292,7 @@ async function boot() {
     sound.remove(ev.chain, ev.heat);
     vibrate(12 + Math.round(ev.heat * 20));
     fx.shake(ui.boardWrap, CONFIG.fx.shakeBase * (0.5 + ev.heat * 1.5 + speedBoost + feverBoost) * fxScale, 160);
-    if (ev.fever && !game.relax) fx.fireworks(1);
+    if (ev.fever && !game.classic) fx.fireworks(1);
     if (ev.feverExtendMs > 0) {
       const fb = document.getElementById('hud-fever')?.getBoundingClientRect();
       if (fb) fx.floatText(fb.left + fb.width * 0.5, fb.top + fb.height, `FEVER +${(ev.feverExtendMs / 1000).toFixed(1)}s`, { color: PALETTE.rose, size: 13 * (0.7 + 0.3 * fxScale), dy: 22, life: 0.9 });
@@ -343,7 +359,7 @@ async function boot() {
     const cx = innerWidth / 2, cy = innerHeight * 0.42;
     fx.floatText(cx, cy, 'ALL CLEAR', { color: PALETTE.amber, size: 42, dy: -30, life: 2.0 });
     fx.floatText(cx, cy + 44, `+${fmt(ev.clearBonus + ev.perfectBonus + ev.savedBonus + ev.hintBonus)}${ev.perfect ? '  PERFECT' : ''}`, { color: ev.perfect ? PALETTE.green : PALETTE.white, size: 20, dy: -30, life: 2.0 });
-    if (ev.chain > 0) fx.floatText(cx, cy + 76, `CHAIN ×${ev.mult.toFixed(1)} を持ち越し`, { color: heatColor(game.heat), size: 14, dy: -24, life: 2.0 });
+    if (ev.chain > 0 && !ev.classic) fx.floatText(cx, cy + 76, `CHAIN ×${ev.mult.toFixed(1)} を持ち越し`, { color: heatColor(game.heat), size: 14, dy: -24, life: 2.0 });
     if (ev.questBonus) fx.floatText(cx, cy + 100, `QUEST CLEAR  +${ev.questBonus}`, { color: PALETTE.green, size: 16, dy: -24, life: 2.0 });
     if (ev.lifeGain) { ui.renderLives(game.run.lives, CONFIG.lives.max, { gained: true }); sound.lifeGain(); }
     ui.renderHud(game);
@@ -371,9 +387,10 @@ async function boot() {
         ${ev.hintBonus ? `<div class="row"><span class="k">Hint 温存 Bonus(${ev.hintsLeft} 回)</span><span class="v plus">+${fmt(ev.hintBonus)}</span></div>` : ''}
         ${ev.questBonus ? `<div class="row"><span class="k">Quest「${ev.quest.text}」</span><span class="v plus">+${fmt(ev.questBonus)}</span></div>` : `<div class="row"><span class="k">Quest「${ev.quest?.text ?? ''}」</span><span class="v">未達成</span></div>`}
         ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
-        ${ev.worldEnd && !ev.isLast ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">開始 Chain +${ev.investChain}${ev.investHearts ? ` · Heart +${ev.investHearts}` : ''}</span></div>` : ''}
+        ${ev.worldEnd && !ev.isLast && ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">各 Stage で Add +${ev.investAdds}</span></div>` : ''}
+        ${ev.worldEnd && !ev.isLast && !ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">開始 Chain +${ev.investChain}${ev.investHearts ? ` · Heart +${ev.investHearts}` : ''}</span></div>` : ''}
         <div class="row"><span class="k">World の Rank</span><span class="v">${rankSummaryWorld(game.worldOf(game.run.stageIndex))}</span></div>
-        <div class="row"><span class="k">最高倍率(この Stage / Run)</span><span class="v">×${ev.maxMult.toFixed(1)} / ×${ev.runMaxMult.toFixed(1)}</span></div>
+        ${ev.classic ? '' : `<div class="row"><span class="k">最高倍率(この Stage / Run)</span><span class="v">×${ev.maxMult.toFixed(1)} / ×${ev.runMaxMult.toFixed(1)}</span></div>`}
         <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
       </div>
       <div class="actions">
@@ -446,7 +463,7 @@ async function boot() {
     if (!ev._replay) {
       if (ev.reason === 'giveUp') sound.giveUp(); else sound.fail();
       vibrate([80, 50, 80]);
-      ui.renderLives(ev.lives + 1, CONFIG.lives.max, { lost: true });
+      if (!ev.classic) ui.renderLives(ev.lives + 1, CONFIG.lives.max, { lost: true });
       fx.flash('rgba(239,68,68,0.18)');
       fx.shake(ui.boardWrap, 8, 400);
       await sleep(900);
@@ -460,12 +477,12 @@ async function boot() {
     const card = ui.showOverlay(`
       <div class="eyebrow">stage ${pad2(ev.stage)}</div>
       <h1>${title}</h1>
-      <div class="ja">${text} Heart を 1 つ失った。</div>
+      <div class="ja">${text}${ev.classic ? ' 新しい Board でやり直せる。' : ' Heart を 1 つ失った。'}</div>
       <div class="rows">
         <div class="row"><span class="k">失った Stage 得点</span><span class="v minus">−${fmt(ev.lost)}</span></div>
         ${ev.kept ? `<div class="row"><span class="k">残った Stage 得点</span><span class="v plus">${fmt(ev.kept)}</span></div>` : ''}
-        <div class="row"><span class="k">残り Heart</span><span class="v">${'♥'.repeat(ev.lives)}${'♡'.repeat(CONFIG.lives.max - ev.lives)}</span></div>
-        <div class="row"><span class="k">最高倍率</span><span class="v">×${ev.maxMult.toFixed(1)}</span></div>
+        ${ev.classic ? '' : `<div class="row"><span class="k">残り Heart</span><span class="v">${'♥'.repeat(ev.lives)}${'♡'.repeat(CONFIG.lives.max - ev.lives)}</span></div>`}
+        ${ev.classic ? '' : `<div class="row"><span class="k">最高倍率</span><span class="v">×${ev.maxMult.toFixed(1)}</span></div>`}
         <div class="row total"><span class="k">Score</span><span class="v">${fmt(game.run.score)}</span></div>
       </div>
       <div class="actions">
@@ -543,6 +560,13 @@ async function boot() {
       <div class="eyebrow">number match</div>
       <h1 class="big">THE TEN</h1>
       <div class="ja">同じ数字か、足して 10 になる 2 つの数字の Pair をタップで選んで消していこう！Board の数字を全部消せば Stage Clear！！</div>
+      <div class="mode-tabs" role="tablist">
+        <button class="mode-tab ${game.classic ? '' : 'on'}" data-mode="normal" role="tab">NORMAL</button>
+        <button class="mode-tab ${game.classic ? 'on' : ''}" data-mode="classic" role="tab">CLASSIC</button>
+      </div>
+      <div class="ja mode-desc">${game.classic
+        ? '本家に近い遊び方。倍率・制限時間・Heart は無く、得点は定額。Add は 5 回で、残すほど Bonus。Dead End はすぐ知らせる。'
+        : 'Chain 倍率と FEVER で高得点を狙う遊び方。Chain は時間で減り、Heart が尽きると Run 終了。'}</div>
       <div class="rows">
         <div class="row"><span class="k">Best Score</span><span class="v">${fmt(game.progress.bestScore)}</span></div>
         <div class="row"><span class="k">Star</span><span class="v">★ ${game.totalStars} / ${stages.length * 3}</span></div>
@@ -552,11 +576,13 @@ async function boot() {
         ${canResume ? `<button class="btn btn-primary" id="ov-resume">Continue (STAGE ${pad2(game.stageDef.stage)})</button>` : ''}
         <button class="btn ${canResume ? 'btn-ghost' : 'btn-primary'}" id="ov-new">New Game</button>
         <div class="worlds">${worlds.join('')}</div>
-        <button class="btn btn-ghost" id="ov-relax">Relax モード: ${game.relax ? 'ON' : 'OFF'}<small>　時間の要素なし・静かな BGM・演出控えめ</small></button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
       </div>
       <div class="meta">rules verified</div>`);
-    card.querySelector('#ov-relax').onclick = () => { game.setRelax(!game.relax); applyRelax(); showTitle(); };
+    card.querySelectorAll('.mode-tab').forEach((b) => b.addEventListener('click', () => {
+      if (b.dataset.mode === game.mode) return;
+      game.setMode(b.dataset.mode); applyMode(); showTitle();
+    }));
     card.querySelector('#ov-resume')?.addEventListener('click', () => {
       ensureAudio();
       const st = game.stage;
@@ -598,7 +624,7 @@ async function boot() {
         <b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP になる。押すと Heart −1 だが、Stage 得点の半分は獲得できる。それに気づかず Hint を押すと Heart −1 で、Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。<br>
         <b>Heart</b>: 3 つ。尽きると Run は終わり、World のはじめから再開。<br>
         <b>ALL CLEAR</b>: Board を全部消すと +${c.score.stageClear} が入り、Chain と FEVER はそのまま次の Stage へ続く。Result の画面は World(5 Stage)の終わりに出る。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}、残した Hint 1 回ごとに +${c.score.hintSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
-        <b>Relax モード</b>(Title かメニューで切り替え): Chain のゲージが減らず、Speed の倍率も無い。BGM はゆっくりで層も控えめ、演出の粒子と揺れも少なめ。得点と Star は通常と同じ基準。<br>
+        <b>CLASSIC モード</b>(Title のタブで切り替え。記録は NORMAL と別): 本家に近い遊び方。Chain 倍率・ゲージ・FEVER・Speed・Heart は無く、1 Pair ${c.score.pairBase} 点(横の隣どうし以外は +${c.classic.pathBonus})、Line ${c.score.rowClear} × 行数の 2 乗、DIGIT CLEAR ${c.classic.digitClear}。Add は ${c.classic.addsPerStage} 回、Hint は常に Pair を 1 組示す。Dead End はすぐ知らせ、Add も無ければ Stage 失敗(得点は半分残り、新しい Board でやり直し)。Perfect は Add も Hint も使わずに Clear。World で残した Add ${c.classic.investAddsPer} 回ごとに、次の World の各 Stage で Add +1(上限 +${c.classic.investAddsCap})。<br>
         <b>Quest</b>: Stage ごとに 1 つお題が出る(「3 を最初に消し切れ」「Add なしで 7 Chain」「斜めで 2 回消せ」「Hint を使わずに Clear」)。達成で +${c.quest.bonus}。どのお題も、その Board で達成できることを確かめてから出している。<br>
         <b>温存の投資</b>: World(5 Stage)で残した Add の回数が、次の World の開始 Chain(1 回ごとに +${c.invest.chainPerAdd}、上限 +${c.invest.chainCap})と Heart(${c.invest.addsPerHeart} 回ごとに +1)になる。<br>
         <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。
@@ -616,15 +642,14 @@ async function boot() {
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
-        <button class="btn btn-ghost" id="ov-relax">Relax: ${game.relax ? 'ON' : 'OFF'}</button>
+        <div class="ja">MODE: ${game.classic ? 'CLASSIC' : 'NORMAL'}(Title で切り替え)</div>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
-        ${inPlay ? '<button class="btn btn-danger" id="ov-giveup">GIVE UP(Heart −1 · 得点は半分残る)</button>' : ''}
+        ${inPlay ? `<button class="btn btn-danger" id="ov-giveup">GIVE UP(${game.classic ? '得点は半分残る' : 'Heart −1 · 得点は半分残る'})</button>` : ''}
       </div>`);
     card.querySelector('#ov-back').onclick = () => { game.resume(Date.now()); ui.hideOverlay(); };
     card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showMenu(); };
     card.querySelector('#ov-bgm').onclick = () => { bgm.cycle(); showMenu(); };
-    card.querySelector('#ov-relax').onclick = () => { game.setRelax(!game.relax); applyRelax(); showMenu(); };
     card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showMenu; };
     card.querySelector('#ov-title').onclick = showTitle;
     card.querySelector('#ov-giveup')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.giveUp()); });
@@ -646,7 +671,7 @@ async function boot() {
   if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') globalThis.__ten = { game, bgm, sound };
 
   // ---------- 起動 ----------
-  applyRelax();
+  applyMode();
   if (game.run && game.stage && game.stage.status === 'play') redraw();
   showTitle();
 

@@ -21,6 +21,10 @@
 //                    外すと 1 回目 Chain −3、2 回目で Chain 半分。光ったタイルを使わず別の Pair を消しても Chain 半分。
 //
 // 時間: tap と tick は現在時刻(ミリ秒)を受け取る。Chain は時間で減り(ゲージ)、FEVER と FLASH は時間で終わる。
+//
+// モード: NORMAL と CLASSIC(cfg.classic)。記録(progress)と進行中の Run はモードごとに別の枠(slots)に持つ。
+//   CLASSIC は本家に近い遊び方: 倍率 ×1 固定、ゲージ・FEVER・Speed・Heart なし、Dead End はすぐ知らせる、
+//   Add は 5 回、Hint は 1 段階だけ。Perfect は Add も Hint も使わないこと。
 
 import { validPairs, removePair, collapseRows, isCleared, matches, connected, rows, numbers } from './rules.js';
 import { pathInfo, difficultyMult, speedTier } from './scoring.js';
@@ -30,13 +34,17 @@ import { makeQuest, updateQuest } from './quest.js';
 const RANKS = ['C', 'B', 'A', 'S'];
 const rankIndex = (r) => RANKS.indexOf(r);
 
+export const MODES = ['normal', 'classic'];
+const emptyProgress = () => ({ maxStage: 0, stars: {}, ranks: {}, attempts: {}, bestScore: 0, runs: 0, quests: {} });
+
 export class Game {
   constructor(stages, config, storage = globalThis.localStorage) {
     this.stages = stages;
     this.cfg = config;
     this.storage = storage;
-    this.progress = { maxStage: 0, stars: {}, ranks: {}, attempts: {}, bestScore: 0, runs: 0 };
-    this.run = null;   // 進行中の Run(無ければ null)
+    this.mode = 'normal';
+    // モードごとの枠: 記録(progress)と進行中の Run(無ければ null)
+    this.slots = Object.fromEntries(MODES.map((m) => [m, { progress: emptyProgress(), run: null }]));
     this.load();
   }
 
@@ -46,34 +54,52 @@ export class Game {
       const raw = this.storage?.getItem(this.cfg.storageKey);
       if (!raw) return;
       const data = JSON.parse(raw);
-      if (data.progress) this.progress = { ...this.progress, ...data.progress };
-      if (data.run) this.run = data.run;
+      if (data.slots) {
+        for (const m of MODES) {
+          if (!data.slots[m]) continue;
+          this.slots[m].progress = { ...emptyProgress(), ...(data.slots[m].progress ?? {}) };
+          this.slots[m].run = data.slots[m].run ?? null;
+        }
+        if (MODES.includes(data.mode)) this.mode = data.mode;
+      } else {
+        // 旧形式(モードが無いころの保存)は NORMAL の記録として読む。relax の印は捨てる
+        if (data.progress) { const { relax, ...p } = data.progress; this.slots.normal.progress = { ...emptyProgress(), ...p }; }
+        if (data.run) this.slots.normal.run = data.run;
+      }
     } catch { /* 壊れていたら初期状態で始める */ }
   }
   save() {
     try {
-      this.storage?.setItem(this.cfg.storageKey, JSON.stringify({ progress: this.progress, run: this.run }));
+      this.storage?.setItem(this.cfg.storageKey, JSON.stringify({ mode: this.mode, slots: this.slots }));
     } catch { /* 保存できない環境では無視 */ }
   }
 
   // ---------- 参照 ----------
-  get relax() { return !!this.progress.relax; }          // Relax モード: ゲージが減らず、Speed Bonus も無い
-  setRelax(on) { this.progress.relax = !!on; this.save(); }
+  get progress() { return this.slots[this.mode].progress; }
+  set progress(v) { this.slots[this.mode].progress = v; }
+  get run() { return this.slots[this.mode].run; }
+  set run(v) { this.slots[this.mode].run = v; }
+  get classic() { return this.mode === 'classic'; }
+  /** モードを切り替える(Title から)。各モードの記録と Run はそのまま残る。 */
+  setMode(mode) { if (MODES.includes(mode)) { this.mode = mode; this.save(); } }
   get stage() { return this.run?.stage ?? null; }
   get stageDef() { return this.run ? this.stages[this.run.stageIndex] : null; }
   multiplierFor(chain) {
+    if (this.classic) return 1;
     const c = this.cfg.chain;
     return Math.min(c.max, 1 + c.step * chain);
   }
   get multiplier() { return this.multiplierFor(this.stage?.chain ?? 0); }
-  get heat() {  // 0〜1。演出の熱さ
+  get heat() {  // 0〜1。演出の熱さ(CLASSIC は常に 0)
+    if (this.classic) return 0;
     const c = this.cfg.chain;
     return (this.multiplier - 1) / (c.max - 1);
   }
   get isStuck() { return !!this.stage && validPairs(this.stage.board).length === 0; }
   get inFever() { return !!this.stage?.fever; }
-  /** いまの Hint の段階: 'hint' | 'flash' | 'scope'。 */
+  /** いまの Hint の段階: 'hint' | 'flash' | 'scope'。CLASSIC は常に 'hint'。 */
   get hintTier() {
+    if (this.classic) return 'hint';
     const h = this.cfg.hint, m = this.multiplier;
     if (this.inFever || m >= h.scopeFrom) return 'scope';
     if (m >= h.flashFrom) return 'flash';
@@ -88,7 +114,7 @@ export class Game {
   gaugeRatio(now) {
     const st = this.stage, c = this.cfg.chain;
     if (!st || st.chain <= 0 || st.lastRemoveAt === null) return 0;
-    if (st.fever || this.relax) return 1;
+    if (st.fever || this.classic) return 1;
     const t = now - st.lastRemoveAt;
     if (t < c.decayGraceMs) return 1 - t / c.decayGraceMs;
     return 1 - ((t - c.decayGraceMs) % c.decayStepMs) / c.decayStepMs;
@@ -105,7 +131,7 @@ export class Game {
 
   // ---------- Run と Stage ----------
   newRun(stageIndex = 0) {
-    this.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null, maxChain: 0, reviews: [], savedAdds: 0, investChain: 0 };
+    this.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null, maxChain: 0, reviews: [], savedAdds: 0, investChain: 0, investAdds: 0, bonusAdds: 0 };
     this.progress.runs += 1;
     return this.startStage();
   }
@@ -119,11 +145,17 @@ export class Game {
     const worldStart = this.run.stageIndex % this.cfg.worldSize === 0;
     const invest = worldStart ? (this.run.investChain ?? 0) : 0;
     const chain = Math.max(carry ? carry.chain : 0, invest);
-    if (worldStart) { this.run.investChain = 0; this.run.savedAdds = 0; }
+    if (worldStart) {
+      // CLASSIC の投資は「次の World の各 Stage の Add +N」。World の最初に受け取り、World の間ずっと効く
+      this.run.bonusAdds = this.classic ? (this.run.investAdds ?? 0) : 0;
+      this.run.investChain = 0; this.run.investAdds = 0; this.run.savedAdds = 0;
+    }
     const fever = carry && carry.fever ? { until: carry.fever.until, startedAt: carry.fever.startedAt ?? now } : null;
+    const addsTotal = this.classic ? this.cfg.classic.addsPerStage + (this.run.bonusAdds ?? 0) : def.adds;
     this.run.stage = {
       board: variant.cells.slice(),
-      addsLeft: def.adds,
+      addsLeft: addsTotal,
+      addsTotal,
       addsUsed: 0,
       hintsLeft: this.cfg.hint.perStage,
       hintsUsed: 0,
@@ -139,11 +171,11 @@ export class Game {
       status: 'play',        // play | clear | failed | runOver | complete
       history: [],           // 感想戦用の手の記録(review.js が読む)
       maxChain: chain,       // この Stage の最高 Chain
-      quest: makeQuest(this.cfg, def.stage, variant.cells),   // この Stage のお題
+      quest: makeQuest(this.cfg, def.stage, variant.cells, { exclude: this.classic ? ['chain'] : [] }),   // この Stage のお題(CLASSIC に Chain のお題は無い)
       firstDigitCleared: null,
     };
     this.save();
-    return [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex, carried: !!carry, quest: this.run.stage.quest, invest }];
+    return [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex, carried: !!carry, quest: this.run.stage.quest, invest, bonusAdds: worldStart ? (this.run.bonusAdds ?? 0) : 0, classic: this.classic }];
   }
 
   /** 中断から戻ったとき。離れていた時間で Chain が減ったり速さ Bonus が付いたりしないようにする。 */
@@ -173,7 +205,7 @@ export class Game {
       st.decayed = 0;
       events.push({ type: 'feverEnd', chain: st.chain, mult: this.multiplier });
     }
-    if (!st.fever && !this.relax && st.chain > 0 && st.lastRemoveAt !== null) {
+    if (!st.fever && !this.classic && st.chain > 0 && st.lastRemoveAt !== null) {
       const t = now - st.lastRemoveAt - cfg.chain.decayGraceMs;
       if (t > 0) {
         const steps = Math.floor(t / cfg.chain.decayStepMs) + 1 - st.decayed;
@@ -258,9 +290,12 @@ export class Game {
 
     // 難しい道・速さの倍率
     const info = pathInfo(b, i, j);
-    const diff = difficultyMult(cfg.difficulty, info);
+    const diffFull = difficultyMult(cfg.difficulty, info);
+    // CLASSIC: 難しさの倍率は無く、横の隣どうし以外に小さな定額の加点
+    const pathBonus = this.classic && info && info.kind !== 'adjacent' ? cfg.classic.pathBonus : 0;
+    const diff = this.classic ? { mult: 1, labels: diffFull.labels } : diffFull;
     const elapsed = st.lastRemoveAt === null ? Infinity : now - st.lastRemoveAt;
-    const speed = scoped || this.relax ? { tier: null, mult: 1 } : speedTier(cfg.speed, elapsed);   // SCOPE の補助を受けた Pair と Relax モードに Speed は付かない
+    const speed = scoped || this.classic ? { tier: null, mult: 1 } : speedTier(cfg.speed, elapsed);   // SCOPE の補助を受けた Pair と CLASSIC に Speed は付かない
     st.lastRemoveAt = now;
     st.decayed = 0;
 
@@ -281,12 +316,12 @@ export class Game {
     }
     const feverMult = st.fever ? cfg.fever.pointMult : 1;
     const hintedRatio = hinted ? cfg.score.hintedPairRatio : 1;
-    const pairPoints = Math.round(cfg.score.pairBase * diff.mult * mult * speed.mult * feverMult * hintedRatio);
+    const pairPoints = Math.round(cfg.score.pairBase * diff.mult * mult * speed.mult * feverMult * hintedRatio) + pathBonus;
     const rowPoints = Math.round(cfg.score.rowClear * clearedRows.length * clearedRows.length * mult * feverMult);
     // DIGIT CLEAR: この 1 手で Board から消え切った数字(残りが 0 になった数字)
     const left = new Set(numbers(after));
     const digitsCleared = [...new Set([b[i], b[j]])].filter((d) => !left.has(d)).sort();
-    const digitPoints = Math.round(cfg.score.digitClear * digitsCleared.length * mult * feverMult);
+    const digitPoints = Math.round((this.classic ? cfg.classic.digitClear : cfg.score.digitClear) * digitsCleared.length * mult * feverMult);
     const points = pairPoints + rowPoints + digitPoints;
     st.stageScore += points;
     this.run.score += points;
@@ -303,13 +338,13 @@ export class Game {
     events.push({
       type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints, digitPoints, digitsCleared,
       chain: st.chain, mult, heat: this.heat, clearedRows, boardBefore: before, board: after,
-      path: info, diffMult: diff.mult, labels, speed: speed.tier, speedMult: speed.mult, elapsed,
+      path: info, diffMult: diff.mult, pathBonus, labels, speed: speed.tier, speedMult: speed.mult, elapsed, classic: this.classic,
       fever: !!st.fever, feverExtendMs, feverUntil: st.fever?.until ?? null, hinted, scoped, scopeBroken,
     });
     if (scopeBroken) events.push({ type: 'scopeEnd', reason: 'ignored', chain: st.chain, mult: this.multiplier });
     if (questUpdate.changed) events.push(this.questEvent(questUpdate));
     // 倍率が上限に達したら FEVER 開始
-    if (!st.fever && mult >= cfg.chain.max) {
+    if (!this.classic && !st.fever && mult >= cfg.chain.max) {
       st.fever = { until: now + cfg.fever.durationMs, startedAt: now };
       events.push({ type: 'feverStart', until: st.fever.until, durationMs: cfg.fever.durationMs });
     }
@@ -319,8 +354,14 @@ export class Game {
   }
 
   // Board が変わった後の判定: Clear だけを見る。Dead End はプレイヤーが Add / Hint を押したときに分かる。
+  // CLASSIC は本家と同じく Dead End をすぐ知らせ、Add も無ければその場で Stage 失敗(Heart は減らない)。
   afterBoardChange() {
-    if (isCleared(this.stage.board)) return this.stageClear();
+    const st = this.stage;
+    if (isCleared(st.board)) return this.stageClear();
+    if (this.classic && validPairs(st.board).length === 0) {
+      if (st.addsLeft > 0) return [{ type: 'deadEnd', addsLeft: st.addsLeft }];
+      return this.stageFailed('deadEnd', this.cfg.classic.failKeepRatio);
+    }
     return [];
   }
 
@@ -377,6 +418,10 @@ export class Game {
     const pairs = validPairs(st.board);
     st.selected = null;
 
+    if (pairs.length === 0 && this.classic) {
+      // CLASSIC: Dead End は知らせてあるので、罰も使用回数の消費も無い
+      return [{ type: 'noHint', penalty: 0, addsLeft: st.addsLeft, blind: false, tier, from: st.chain, chain: st.chain, mult: 1, hintsLeft: st.hintsLeft }];
+    }
     if (pairs.length === 0) {
       // Dead End なのに押した
       if (st.addsLeft <= 0) {
@@ -437,14 +482,16 @@ export class Game {
   // ---------- 結果 ----------
   rankFor(stageScore) {
     const r = this.cfg.rank, def = this.stageDef;
-    const ratio = stageScore / (def.cellsCount * r.perCell);
+    const perCell = this.classic ? this.cfg.classic.rankPerCell : r.perCell;
+    const ratio = stageScore / (def.cellsCount * perCell);
     return ratio >= r.S ? 'S' : ratio >= r.A ? 'A' : ratio >= r.B ? 'B' : 'C';
   }
 
   stageClear() {
     const st = this.stage, def = this.stageDef, cfg = this.cfg;
-    const perfect = st.addsUsed === 0;
-    const stars = perfect ? 3 : st.addsUsed === 1 ? 2 : 1;
+    // Perfect: Add なしで Clear。CLASSIC は Hint も使わないこと
+    const perfect = st.addsUsed === 0 && (!this.classic || st.hintsUsed === 0);
+    const stars = perfect ? 3 : st.addsUsed <= 1 ? 2 : 1;
     const clearBonus = cfg.score.stageClear;
     const perfectBonus = perfect ? cfg.score.perfect : 0;
     const savedBonus = st.addsLeft * cfg.score.addSaved;
@@ -456,14 +503,18 @@ export class Game {
     // 温存の投資: この World で残した Add を数え、World の終わりで次の World の開始 Chain と Heart に変える
     this.run.savedAdds = (this.run.savedAdds ?? 0) + st.addsLeft;
     const worldEnd = (this.run.stageIndex + 1) % cfg.worldSize === 0;
-    let investChain = 0, investHearts = 0;
-    if (worldEnd) {
+    let investChain = 0, investHearts = 0, investAdds = 0;
+    if (worldEnd && this.classic) {
+      // CLASSIC: 残した Add → 次の World の各 Stage の Add +N
+      investAdds = Math.min(cfg.classic.investAddsCap, Math.floor(this.run.savedAdds / cfg.classic.investAddsPer));
+      this.run.investAdds = investAdds;
+    } else if (worldEnd) {
       investChain = Math.min(cfg.invest.chainCap, this.run.savedAdds * cfg.invest.chainPerAdd);
       investHearts = Math.floor(this.run.savedAdds / cfg.invest.addsPerHeart);
       this.run.investChain = investChain;
     }
-    // Heart は上限まで。Perfect の回復を先に、投資の分はその残りに入れる(表示する数は実際に増えた分)
-    const room = cfg.lives.max - this.run.lives;
+    // Heart は上限まで。Perfect の回復を先に、投資の分はその残りに入れる(表示する数は実際に増えた分)。CLASSIC に Heart は無い
+    const room = this.classic ? 0 : cfg.lives.max - this.run.lives;
     const perfectGain = Math.min(room, perfect ? cfg.lives.perfectRecover : 0);
     investHearts = Math.min(room - perfectGain, investHearts);
     const lifeGain = perfectGain + investHearts;
@@ -490,7 +541,7 @@ export class Game {
       worldEnd,   // World の終わりなら Result の画面
       chain: st.chain, mult: this.multiplier, fever: !!st.fever,
       maxMult: this.multiplierFor(st.maxChain ?? 0), runMaxMult: this.multiplierFor(this.run.maxChain ?? 0),
-      quest: st.quest, questBonus, savedAdds: this.run.savedAdds, investChain, investHearts,
+      quest: st.quest, questBonus, savedAdds: this.run.savedAdds, investChain, investHearts, investAdds, classic: this.classic,
     }];
   }
 
@@ -518,14 +569,14 @@ export class Game {
   stageFailed(reason, keepRatio = 0) {
     const st = this.stage, def = this.stageDef;
     this.pushReview(def.stage, false);
-    this.run.lives -= 1;
+    if (!this.classic) this.run.lives -= 1;          // CLASSIC に Heart は無い(Run は終わらない)
     const kept = Math.floor(st.stageScore * keepRatio);
     const lost = st.stageScore - kept;
     this.run.score -= lost;
     this.progress.attempts[def.stage] = (this.progress.attempts[def.stage] ?? 0) + 1;
     st.stageScore = 0;
     st.fever = null; st.scope = null; st.flashUntil = null;
-    if (this.run.lives <= 0) {
+    if (!this.classic && this.run.lives <= 0) {
       st.status = 'runOver';
       this.progress.bestScore = Math.max(this.progress.bestScore, this.run.score);
       this.save();
@@ -534,7 +585,7 @@ export class Game {
     }
     st.status = 'failed';
     this.save();
-    return [{ type: 'stageFailed', reason, lives: this.run.lives, lost, kept, stage: def.stage, maxMult: this.multiplierFor(st.maxChain ?? 0) }];
+    return [{ type: 'stageFailed', reason, lives: this.run.lives, lost, kept, stage: def.stage, maxMult: this.multiplierFor(st.maxChain ?? 0), classic: this.classic }];
   }
 
   retryStage() {

@@ -141,8 +141,12 @@ export class FX {
   // ヒットストップ: ms の間だけ粒子と浮き文字の動きを止める(描画は続ける)。
   // 大きな出来事の直前に一瞬止めると、止まった分だけ「重さ」が出る。
   freeze(ms) {
+    if (this.calm) return;
     this.frozenUntil = Math.max(this.frozenUntil, performance.now() + ms);
   }
+
+  // CLASSIC モード: 揺れ・ヒットストップ・画面の点滅を止める(粒子は呼ぶ側が量を減らす)
+  setCalm(on) { this.calm = !!on; }
 
   // 文字が (x, y) から (tx, ty) へ飛んでいく(得点がスコア表示へ吸い込まれる演出)。
   flyText(x, y, tx, ty, text, { color = PALETTE.white, size = 16, dur = 0.45, delay = 0 } = {}) {
@@ -151,7 +155,7 @@ export class FX {
 
   // 画面(要素)を揺らす。intensity は px。
   shake(el, intensity = 3, duration = 220) {
-    if (!el) return;
+    if (!el || this.calm) return;
     const start = performance.now();
     const tick = (t) => {
       const u = (t - start) / duration;
@@ -165,6 +169,7 @@ export class FX {
 
   // 画面全体を一瞬明るくする(大きな出来事用)
   flash(color = 'rgba(255,255,255,0.18)') {
+    if (this.calm) return;
     this.flashColor = color; this.flashAge = 0;
   }
 

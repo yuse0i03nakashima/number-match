@@ -59,7 +59,7 @@ export class Music {
     this.enabled = true;
     this.playing = false;
     this.layers = 0;                    // いま鳴らしている層の数(小節の頭で heat から決める)
-    this.calm = null;                   // Relax モードの設定 { bpm, maxLayers, volume, feverCalm }。null なら通常
+    this.calm = null;                   // CLASSIC モードの設定 { bpm, maxLayers, volume, feverCalm }。null なら通常
     this.pendingBpm = null;             // 次の小節の頭から適用するテンポ
     this.step = 0;                      // 次に予約する 16 分の番号(曲の頭から通し)
     this.nextTime = 0;                  // その 16 分の時刻
@@ -125,7 +125,7 @@ export class Music {
     return Math.min(n, cap);
   }
 
-  // Relax モードの入り切り。テンポは次の小節の頭から変わる(途中で変えると拍がよれる)
+  // CLASSIC モードの入り切り。テンポは次の小節の頭から変わる(途中で変えると拍がよれる)
   setCalm(settings) {
     this.calm = settings;
     this.pendingBpm = settings ? settings.bpm : (this.cfg.bpm ?? 124);
@@ -196,7 +196,7 @@ export class Music {
         this.tone({ t, freq: mtof(m + 12), type: 'triangle', detune: det * 0.5, dur: barLen, gain: 0.05, attack: 0.7, release: 0.8, cutoff: 4000 });
       }
     }
-    // FEVER: 小節ごとにフィルタが開いて閉じる(Relax では開閉しない)
+    // FEVER: 小節ごとにフィルタが開いて閉じる(CLASSIC では開閉しない)
     if (this.fever && !(this.calm && this.calm.feverCalm)) {
       this.lowpass.frequency.cancelScheduledValues(t);
       this.lowpass.frequency.setValueAtTime(3000, t);
@@ -267,7 +267,7 @@ export class Music {
     g.gain.setValueAtTime(0.9, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
     osc.connect(g); g.connect(this.drumBus);
     osc.start(t); osc.stop(t + 0.35);
-    // FEVER のポンプ: キックのたびに全体を凹ませて戻す(サイドチェインの代わり)。Relax ではしない
+    // FEVER のポンプ: キックのたびに全体を凹ませて戻す(サイドチェインの代わり)。CLASSIC ではしない
     if (this.fever && !(this.calm && this.calm.feverCalm)) {
       this.pump.gain.cancelScheduledValues(t);
       this.pump.gain.setValueAtTime(0.55, t);
