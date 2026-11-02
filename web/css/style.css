@@ -100,6 +100,7 @@ body.gridflash::after { animation:gridflash 0.45s ease-out; }
 @keyframes bump { 0%{transform:scale(1)} 40%{transform:scale(1.12); color:var(--heat)} 100%{transform:scale(1)} }
 
 .lives { display:flex; gap:4px; font-size:14px; line-height:1; }
+.lives[hidden], .chain[hidden] { display:none; }   /* CLASSIC では Heart と Chain を隠す(hidden 属性を display:flex より優先) */
 .lives .heart { color:var(--rose); transition:transform 0.2s, opacity 0.2s; display:inline-block; }
 .lives .heart.off { color:var(--border-light); }
 .lives .heart.lost { animation:heart-lost 0.5s ease-out forwards; }
