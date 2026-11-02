@@ -59,6 +59,8 @@ export class Music {
     this.enabled = true;
     this.playing = false;
     this.layers = 0;                    // いま鳴らしている層の数(小節の頭で heat から決める)
+    this.calm = null;                   // Relax モードの設定 { bpm, maxLayers, volume, feverCalm }。null なら通常
+    this.pendingBpm = null;             // 次の小節の頭から適用するテンポ
     this.step = 0;                      // 次に予約する 16 分の番号(曲の頭から通し)
     this.nextTime = 0;                  // その 16 分の時刻
     this.timer = null;
@@ -117,13 +119,23 @@ export class Music {
   }
 
   layersFor(heat) {
-    if (this.fever) return 4;
-    return heat >= 0.75 ? 4 : heat >= 0.5 ? 3 : heat >= 0.25 ? 2 : 1;
+    const cap = this.calm ? this.calm.maxLayers : 4;
+    if (this.fever && !(this.calm && this.calm.feverCalm)) return Math.min(4, cap);
+    const n = heat >= 0.75 ? 4 : heat >= 0.5 ? 3 : heat >= 0.25 ? 2 : 1;
+    return Math.min(n, cap);
+  }
+
+  // Relax モードの入り切り。テンポは次の小節の頭から変わる(途中で変えると拍がよれる)
+  setCalm(settings) {
+    this.calm = settings;
+    this.pendingBpm = settings ? settings.bpm : (this.cfg.bpm ?? 124);
+    this.updateMaster(0.8);
   }
 
   targetVolume() {
     if (!this.enabled) return 0.0001;
-    return Math.max(0.0001, this.cfg.volume * (0.9 + this.heat * 0.2) * (this.ducked ? 0.35 : 1));
+    const base = this.calm ? this.calm.volume : this.cfg.volume;
+    return Math.max(0.0001, base * (0.9 + this.heat * 0.2) * (this.ducked ? 0.35 : 1));
   }
   updateMaster(tc = 0.5) {
     if (!this.master || !this.playing) return;
@@ -161,6 +173,7 @@ export class Music {
       const s = this.step % STEPS_PER_BAR;
       const bar = Math.floor(this.step / STEPS_PER_BAR);
       if (s === 0) {
+        if (this.pendingBpm !== null) { this.bpm = this.pendingBpm; this.stepSec = 60 / this.bpm / 4; this.delay.delayTime.setValueAtTime(this.stepSec * 3, this.nextTime); this.pendingBpm = null; }
         this.layers = this.layersFor(this.heat);     // 層の切り替えは小節の頭だけ
         this.playBar(this.nextTime, bar);
       }
@@ -183,8 +196,8 @@ export class Music {
         this.tone({ t, freq: mtof(m + 12), type: 'triangle', detune: det * 0.5, dur: barLen, gain: 0.05, attack: 0.7, release: 0.8, cutoff: 4000 });
       }
     }
-    // FEVER: 小節ごとにフィルタが開いて閉じる
-    if (this.fever) {
+    // FEVER: 小節ごとにフィルタが開いて閉じる(Relax では開閉しない)
+    if (this.fever && !(this.calm && this.calm.feverCalm)) {
       this.lowpass.frequency.cancelScheduledValues(t);
       this.lowpass.frequency.setValueAtTime(3000, t);
       this.lowpass.frequency.exponentialRampToValueAtTime(14000, t + barLen * 0.5);
@@ -210,8 +223,9 @@ export class Music {
     // ドラム(層 1〜)
     if (L >= 2) {
       if (onBeat) this.kick(t);
-      if (this.fever || L >= 4 ? true : offBeat) this.hat(t, s % 4 === 2 ? 0.14 : 0.08, this.fever && s % 8 === 6);
-      if (this.fever && (s === 4 || s === 12)) this.snare(t);
+      const wild = this.fever && !(this.calm && this.calm.feverCalm);
+      if (wild || L >= 4 ? true : offBeat) this.hat(t, s % 4 === 2 ? 0.14 : 0.08, wild && s % 8 === 6);
+      if (wild && (s === 4 || s === 12)) this.snare(t);
     }
 
     // ベース(層 2〜): 8 分。3 拍目の裏でオクターブ上
@@ -253,8 +267,8 @@ export class Music {
     g.gain.setValueAtTime(0.9, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
     osc.connect(g); g.connect(this.drumBus);
     osc.start(t); osc.stop(t + 0.35);
-    // FEVER のポンプ: キックのたびに全体を凹ませて戻す(サイドチェインの代わり)
-    if (this.fever) {
+    // FEVER のポンプ: キックのたびに全体を凹ませて戻す(サイドチェインの代わり)。Relax ではしない
+    if (this.fever && !(this.calm && this.calm.feverCalm)) {
       this.pump.gain.cancelScheduledValues(t);
       this.pump.gain.setValueAtTime(0.55, t);
       this.pump.gain.linearRampToValueAtTime(1, t + this.stepSec * 3);

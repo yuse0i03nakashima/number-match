@@ -104,7 +104,7 @@ export class Renderer {
     const run = game.run, st = game.stage, def = game.stageDef;
     if (!run || !st || !def) return;
     this.$('hud-stage-label').textContent = `STAGE ${String(def.stage).padStart(2, '0')}`;
-    this.$('hud-world-label').textContent = `world ${game.worldOf(run.stageIndex) + 1} · ${def.cellsCount} cells`;
+    this.$('hud-world-label').textContent = `world ${game.worldOf(run.stageIndex) + 1} · ${def.cellsCount} cells${game.relax ? ' · relax' : ''}`;
     this.$('hud-score').textContent = run.score.toLocaleString('en-US');
     this.$('hud-mult').textContent = `×${game.multiplier.toFixed(1)}`;
     this.$('hud-chain-fill').style.width = `${Math.round(game.heat * 100)}%`;
