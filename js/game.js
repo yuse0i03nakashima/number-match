@@ -25,6 +25,7 @@
 import { validPairs, removePair, collapseRows, isCleared, matches, connected, rows, numbers } from './rules.js';
 import { pathInfo, difficultyMult, speedTier } from './scoring.js';
 import { chooseAddition } from './solver.js';
+import { makeQuest, updateQuest } from './quest.js';
 
 const RANKS = ['C', 'B', 'A', 'S'];
 const rankIndex = (r) => RANKS.indexOf(r);
@@ -104,7 +105,7 @@ export class Game {
 
   // ---------- Run と Stage ----------
   newRun(stageIndex = 0) {
-    this.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null, maxChain: 0, reviews: [] };
+    this.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null, maxChain: 0, reviews: [], savedAdds: 0, investChain: 0 };
     this.progress.runs += 1;
     return this.startStage();
   }
@@ -113,8 +114,12 @@ export class Game {
     const def = this.stageDef;
     const attempt = this.progress.attempts[def.stage] ?? 0;
     const variant = def.boards[attempt % def.boards.length];
-    // carry があれば前の Stage の Chain・FEVER を持ち越す(Board を全部消して続けるとき)
-    const chain = carry ? carry.chain : 0;
+    // carry があれば前の Stage の Chain・FEVER を持ち越す(Board を全部消して続けるとき)。
+    // World の最初の Stage では、前の World で残した Add の投資分(run.investChain)を開始 Chain に足す
+    const worldStart = this.run.stageIndex % this.cfg.worldSize === 0;
+    const invest = worldStart ? (this.run.investChain ?? 0) : 0;
+    const chain = Math.max(carry ? carry.chain : 0, invest);
+    if (worldStart) { this.run.investChain = 0; this.run.savedAdds = 0; }
     const fever = carry && carry.fever ? { until: carry.fever.until } : null;
     this.run.stage = {
       board: variant.cells.slice(),
@@ -134,9 +139,11 @@ export class Game {
       status: 'play',        // play | clear | failed | runOver | complete
       history: [],           // 感想戦用の手の記録(review.js が読む)
       maxChain: chain,       // この Stage の最高 Chain
+      quest: makeQuest(this.cfg, def.stage, variant.cells),   // この Stage のお題
+      firstDigitCleared: null,
     };
     this.save();
-    return [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex, carried: !!carry }];
+    return [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex, carried: !!carry, quest: this.run.stage.quest, invest }];
   }
 
   /** 中断から戻ったとき。離れていた時間で Chain が減ったり速さ Bonus が付いたりしないようにする。 */
@@ -175,6 +182,8 @@ export class Game {
           st.chain = Math.max(0, st.chain - steps);
           st.decayed += steps;
           events.push({ type: 'chainDecay', from: before, chain: st.chain, mult: this.multiplier, heat: this.heat });
+          const qd = updateQuest(st.quest, { type: 'break' });
+          if (qd.changed) events.push(this.questEvent(qd));
           if (st.chain === 0) {
             st.lastRemoveAt = null;
             if (st.scope) { st.scope = null; events.push({ type: 'scopeEnd', reason: 'decay' }); }
@@ -225,8 +234,9 @@ export class Game {
     }
     st.chain = Math.floor(st.chain * h.scopeBreakRatio);
     st.scope = null;
+    const qb = updateQuest(st.quest, { type: 'break' });
     this.save();
-    return [{ type: 'scopeMiss', misses: 2, from: before, chain: st.chain, mult: this.multiplier }, { type: 'scopeEnd', reason: 'miss' }];
+    return [{ type: 'scopeMiss', misses: 2, from: before, chain: st.chain, mult: this.multiplier }, { type: 'scopeEnd', reason: 'miss' }, ...(qb.changed ? [this.questEvent(qb)] : [])];
   }
 
   remove(i, j, now) {
@@ -275,6 +285,9 @@ export class Game {
     st.selected = null;
     st.board = after;
     st.history.push({ type: 'remove', board: b, i, j, points, chain: st.chain, chainBefore, mult, clearedRows, digitsCleared, hinted, scoped });
+    const otherDigitClearedBefore = st.firstDigitCleared !== null;
+    if (digitsCleared.length && st.firstDigitCleared === null) st.firstDigitCleared = digitsCleared[0];
+    const questUpdate = updateQuest(st.quest, { type: 'remove', chain: st.chain, chainBefore, digitsCleared, path: info, otherDigitClearedBefore });
 
     const labels = [...diff.labels];
     if (scoped) labels.push('SCOPE');
@@ -286,6 +299,7 @@ export class Game {
       fever: !!st.fever, hinted, scoped, scopeBroken,
     });
     if (scopeBroken) events.push({ type: 'scopeEnd', reason: 'ignored', chain: st.chain, mult: this.multiplier });
+    if (questUpdate.changed) events.push(this.questEvent(questUpdate));
     // 倍率が上限に達したら FEVER 開始
     if (!st.fever && mult >= cfg.chain.max) {
       st.fever = { until: now + cfg.fever.durationMs };
@@ -321,14 +335,22 @@ export class Game {
     st.hintPair = null; st.scope = null; st.flashUntil = null;
     st.lastRemoveAt = st.chain > 0 ? now : null;
     st.decayed = 0;
+    const qa = updateQuest(st.quest, { type: 'break' });
     const events = [{
       type: 'add', oldLength, newLength: st.board.length, addsLeft: st.addsLeft, board: st.board,
       arrangement: added.arrangement, solvable: added.checked && added.arrangement !== 'fallback',
       stuckBefore: stuck, chainBefore, chainAfter: st.chain,
       multBefore: this.multiplierFor(chainBefore), multAfter: this.multiplier,
     }];
+    if (qa.changed) events.push(this.questEvent(qa));
     this.save();
     return events;
+  }
+
+  /** お題の進み具合のイベント。 */
+  questEvent(u) {
+    const q = this.stage.quest;
+    return { type: 'quest', quest: q, done: u.done, failed: u.failed };
   }
 
   /** Hint の料金を払う。FEVER 中は時間、それ以外は使用回数。払えなければ false。 */
@@ -371,17 +393,19 @@ export class Game {
 
     if (!this.payHint(now)) return [{ type: 'noHints', tier }];
     st.history.push({ type: 'hint', board: st.board.slice(), tier, stuck: false, chain: st.chain });
+    const qh = updateQuest(st.quest, { type: 'hint' });
+    const questEvents = qh.changed ? [this.questEvent(qh)] : [];
     if (tier === 'hint') {
       st.hintPair = pairs[Math.floor(Math.random() * pairs.length)];
       this.save();
-      return [{ type: 'hint', tier, pair: st.hintPair, hintsLeft: st.hintsLeft }];
+      return [{ type: 'hint', tier, pair: st.hintPair, hintsLeft: st.hintsLeft }, ...questEvents];
     }
     if (tier === 'flash') {
       st.flashUntil = now + h.flashMs;
       // ゲージを半分に: 猶予の半分が過ぎたことにする
       if (st.chain > 0) { st.lastRemoveAt = now - cfg.chain.decayGraceMs * (1 - h.flashGaugeRatio); st.decayed = 0; }
       this.save();
-      return [{ type: 'flash', tier, pairs, until: st.flashUntil, hintsLeft: st.hintsLeft }];
+      return [{ type: 'flash', tier, pairs, until: st.flashUntil, hintsLeft: st.hintsLeft }, ...questEvents];
     }
     // scope: 相手のいるタイルを 1 枚。相手が少ないタイルを選ぶ(探しがいがある)
     const count = new Map();
@@ -390,7 +414,7 @@ export class Game {
     const tile = tiles[Math.floor(Math.random() * Math.min(3, tiles.length))][0];
     st.scope = { tile, misses: 0 };
     this.save();
-    return [{ type: 'scope', tier, tile, remaining: pairs.length, hintsLeft: st.hintsLeft, fever: !!st.fever }];
+    return [{ type: 'scope', tier, tile, remaining: pairs.length, hintsLeft: st.hintsLeft, fever: !!st.fever }, ...questEvents];
   }
 
   // GIVE UP = 分かったうえでの失敗。Stage 得点の半分は残る
@@ -417,9 +441,26 @@ export class Game {
     const perfectBonus = perfect ? cfg.score.perfect : 0;
     const savedBonus = st.addsLeft * cfg.score.addSaved;
     const hintBonus = st.hintsLeft * cfg.score.hintSaved;
-    const lifeGain = perfect && this.run.lives < cfg.lives.max ? cfg.lives.perfectRecover : 0;
-    this.run.lives = Math.min(cfg.lives.max, this.run.lives + lifeGain);
-    const bonusTotal = clearBonus + perfectBonus + savedBonus + hintBonus;
+    // お題: noHint は Clear で達成が決まる
+    updateQuest(st.quest, { type: 'clear' });
+    const questBonus = st.quest && st.quest.done ? cfg.quest.bonus : 0;
+    if (st.quest && st.quest.done) this.progress.quests = { ...(this.progress.quests ?? {}), [def.stage]: true };
+    // 温存の投資: この World で残した Add を数え、World の終わりで次の World の開始 Chain と Heart に変える
+    this.run.savedAdds = (this.run.savedAdds ?? 0) + st.addsLeft;
+    const worldEnd = (this.run.stageIndex + 1) % cfg.worldSize === 0;
+    let investChain = 0, investHearts = 0;
+    if (worldEnd) {
+      investChain = Math.min(cfg.invest.chainCap, this.run.savedAdds * cfg.invest.chainPerAdd);
+      investHearts = Math.floor(this.run.savedAdds / cfg.invest.addsPerHeart);
+      this.run.investChain = investChain;
+    }
+    // Heart は上限まで。Perfect の回復を先に、投資の分はその残りに入れる(表示する数は実際に増えた分)
+    const room = cfg.lives.max - this.run.lives;
+    const perfectGain = Math.min(room, perfect ? cfg.lives.perfectRecover : 0);
+    investHearts = Math.min(room - perfectGain, investHearts);
+    const lifeGain = perfectGain + investHearts;
+    this.run.lives += lifeGain;
+    const bonusTotal = clearBonus + perfectBonus + savedBonus + hintBonus + questBonus;
     this.run.score += bonusTotal;
     st.stageScore += bonusTotal;
     st.scope = null; st.flashUntil = null;     // FEVER と Chain は次の Stage へ持ち越す
@@ -438,9 +479,10 @@ export class Game {
       stageScore: st.stageScore, playScore: st.stageScore - bonusTotal, score: this.run.score,
       addsUsed: st.addsUsed, addsLeft: st.addsLeft, hintsLeft: st.hintsLeft,
       isLast: this.run.stageIndex + 1 >= this.stages.length,
-      worldEnd: (this.run.stageIndex + 1) % this.cfg.worldSize === 0,   // World の終わりなら Result の画面
+      worldEnd,   // World の終わりなら Result の画面
       chain: st.chain, mult: this.multiplier, fever: !!st.fever,
       maxMult: this.multiplierFor(st.maxChain ?? 0), runMaxMult: this.multiplierFor(this.run.maxChain ?? 0),
+      quest: st.quest, questBonus, savedAdds: this.run.savedAdds, investChain, investHearts,
     }];
   }
 

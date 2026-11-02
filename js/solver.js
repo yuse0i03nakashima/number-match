@@ -5,8 +5,11 @@
 
 import { validPairs, removePair, collapseRows, isCleared, addNumbers, numbers } from './rules.js';
 
-/** budget 状態以内に全消し手順が見つかれば手順([[i, j], ...])、見つからなければ null。 */
-export function solve(board, budget = 3000) {
+/**
+ * budget 状態以内に全消し手順が見つかれば手順([[i, j], ...])、見つからなければ null。
+ * allow(board, i, j, after) を渡すと、false を返す手は使わない(お題の達成可能性の確認に使う)。
+ */
+export function solve(board, budget = 3000, allow = null) {
   const seen = new Set();
   let left = budget;
   const go = (b) => {
@@ -20,6 +23,7 @@ export function solve(board, budget = 3000) {
     // 消した後の Board が短くなる(行が消える)手を先に
     const ordered = pairs
       .map(([i, j]) => ({ i, j, next: collapseRows(removePair(i, j, b)) }))
+      .filter((m) => !allow || allow(b, m.i, m.j, m.next))
       .sort((x, y) => x.next.length - y.next.length || x.i - y.i || x.j - y.j);
     for (const m of ordered) {
       const rest = go(m.next);

@@ -1,10 +1,10 @@
 // Service Worker: 一度開いたら電波が無くても遊べるようにファイルを手元に置く。
 // 更新のたびに VERSION を上げると古いキャッシュが捨てられる。
-const VERSION = 'ten-v3';
+const VERSION = 'ten-v4';
 const FILES = [
   './', './index.html', './manifest.json',
   './css/style.css',
-  './js/main.js', './js/game.js', './js/rules.js', './js/render.js', './js/fx.js', './js/audio.js', './js/music.js', './js/review.js', './js/config.js',
+  './js/main.js', './js/game.js', './js/rules.js', './js/render.js', './js/fx.js', './js/audio.js', './js/music.js', './js/review.js', './js/quest.js', './js/config.js',
   './levels/stages.json',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
 ];
