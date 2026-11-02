@@ -75,13 +75,10 @@ export const CONFIG = {
     hitStopMs: 90,         // 行が消えた瞬間に粒子を止める時間(ヒットストップ)
   },
   bgm: {
-    mode: 'synth',                   // 既定: 'synth'(生成 BGM) | 'track'(mp3) | 'off'
+    mode: 'synth',                   // 既定: 'synth'(生成 BGM) | 'off'
     synthVolume: 0.30,               // 生成 BGM の音量
     tonic: 64,                       // 生成 BGM の調(長調の主音の midi 番号)。64 = E。参考曲 Under a Darkening Sky の解析結果(E メジャー)に合わせた
     bpm: 124,                        // 生成 BGM のテンポ
-    volume: 0.22,                    // mp3 の音量(効果音より少し小さく。出口のコンプレッサーで割れを防ぐ)
-    tracks: { normal: 'bgm/normal.mp3', fever: 'bgm/fever.mp3' },   // 通常曲と FEVER 曲(同時に鳴らし、音量だけで切り替える)
-    trims: { normal: 1.0, fever: 0.9 },   // 曲ごとの音量合わせ
   },
   audio: {
     masterVolume: 0.35,

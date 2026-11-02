@@ -102,7 +102,7 @@ export class Game {
 
   // ---------- Run と Stage ----------
   newRun(stageIndex = 0) {
-    this.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null };
+    this.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null, maxChain: 0, reviews: [] };
     this.progress.runs += 1;
     return this.startStage();
   }
@@ -130,6 +130,8 @@ export class Game {
       decayed: 0,            // 前の消去から Chain が減った回数
       fever,                 // FEVER 中なら { until }
       status: 'play',        // play | clear | failed | runOver | complete
+      history: [],           // 感想戦用の手の記録(review.js が読む)
+      maxChain: chain,       // この Stage の最高 Chain
     };
     this.save();
     return [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex, carried: !!carry }];
@@ -252,7 +254,10 @@ export class Game {
 
     // Chain: 補助を受けた Pair(HINT / SCOPE)は増えない。それ以外は +1
     const assisted = hinted || scoped;
+    const chainBefore = st.chain;
     if (!assisted) st.chain += 1;
+    st.maxChain = Math.max(st.maxChain ?? 0, st.chain);
+    this.run.maxChain = Math.max(this.run.maxChain ?? 0, st.chain);
     const mult = this.multiplier;
     const feverMult = st.fever ? cfg.fever.pointMult : 1;
     const hintedRatio = hinted ? cfg.score.hintedPairRatio : 1;
@@ -267,6 +272,7 @@ export class Game {
     this.run.score += points;
     st.selected = null;
     st.board = after;
+    st.history.push({ type: 'remove', board: b, i, j, points, chain: st.chain, chainBefore, mult, clearedRows, digitsCleared, hinted, scoped });
 
     const labels = [...diff.labels];
     if (scoped) labels.push('SCOPE');
@@ -303,6 +309,7 @@ export class Game {
     const chainBefore = st.chain;
     // 足す数字は残っている数字そのもの(本家と同じ)。並びは「Add なしで全消しできる」と確かめられたものを選ぶ
     const added = chooseAddition(st.board);
+    st.history.push({ type: 'add', board: st.board, stuckBefore: stuck, chainBefore, chainAfter: stuck ? Math.floor(st.chain * cfg.stuck.addKeepRatio) : 0, multBefore: this.multiplierFor(chainBefore) });
     st.board = added.board;
     st.addsLeft -= 1;
     st.addsUsed += 1;
@@ -351,6 +358,7 @@ export class Game {
       }
       if (!this.payHint(now)) return [{ type: 'noHints', tier }];
       const before = st.chain;
+      st.history.push({ type: 'hint', board: st.board.slice(), tier, stuck: true, chain: before });
       st.chain = Math.floor(st.chain * h.stuckKeepRatio);
       st.scope = null; st.hintPair = null;
       const penalty = Math.min(st.stageScore, cfg.score.hintWhenStuck);
@@ -360,6 +368,7 @@ export class Game {
     }
 
     if (!this.payHint(now)) return [{ type: 'noHints', tier }];
+    st.history.push({ type: 'hint', board: st.board.slice(), tier, stuck: false, chain: st.chain });
     if (tier === 'hint') {
       st.hintPair = pairs[Math.floor(Math.random() * pairs.length)];
       this.save();
@@ -415,6 +424,7 @@ export class Game {
     st.status = 'clear';
     const rank = this.rankFor(st.stageScore);
 
+    this.pushReview(def.stage, true);
     this.progress.stars[def.stage] = Math.max(this.progress.stars[def.stage] ?? 0, stars);
     const prevRank = this.progress.ranks[def.stage];
     if (!prevRank || rankIndex(rank) > rankIndex(prevRank)) this.progress.ranks[def.stage] = rank;
@@ -428,7 +438,16 @@ export class Game {
       isLast: this.run.stageIndex + 1 >= this.stages.length,
       worldEnd: (this.run.stageIndex + 1) % this.cfg.worldSize === 0,   // World の終わりなら Result の画面
       chain: st.chain, mult: this.multiplier, fever: !!st.fever,
+      maxMult: this.multiplierFor(st.maxChain ?? 0), runMaxMult: this.multiplierFor(this.run.maxChain ?? 0),
     }];
+  }
+
+  /** 感想戦のために Stage の記録を Run に残す(直近 6 Stage まで)。 */
+  pushReview(stage, cleared) {
+    const st = this.stage;
+    if (!this.run.reviews) this.run.reviews = [];
+    this.run.reviews.push({ stage, cleared, history: st.history, stageScore: st.stageScore, maxChain: st.maxChain ?? 0 });
+    if (this.run.reviews.length > 6) this.run.reviews.shift();
   }
 
   nextStage(now = Date.now()) {
@@ -446,6 +465,7 @@ export class Game {
   /** 失敗。keepRatio は Stage 得点のうち残す割合(GIVE UP なら半分、気づかずの Hint なら 0)。 */
   stageFailed(reason, keepRatio = 0) {
     const st = this.stage, def = this.stageDef;
+    this.pushReview(def.stage, false);
     this.run.lives -= 1;
     const kept = Math.floor(st.stageScore * keepRatio);
     const lost = st.stageScore - kept;
@@ -458,11 +478,11 @@ export class Game {
       this.progress.bestScore = Math.max(this.progress.bestScore, this.run.score);
       this.save();
       return [{ type: 'runOver', reason, score: this.run.score, best: this.progress.bestScore, lost, kept,
-                resumeStage: this.worldStart(this.run.stageIndex), stage: def.stage }];
+                resumeStage: this.worldStart(this.run.stageIndex), stage: def.stage, runMaxMult: this.multiplierFor(this.run.maxChain ?? 0) }];
     }
     st.status = 'failed';
     this.save();
-    return [{ type: 'stageFailed', reason, lives: this.run.lives, lost, kept, stage: def.stage }];
+    return [{ type: 'stageFailed', reason, lives: this.run.lives, lost, kept, stage: def.stage, maxMult: this.multiplierFor(st.maxChain ?? 0) }];
   }
 
   retryStage() {
