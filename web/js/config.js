@@ -80,6 +80,18 @@ export const CONFIG = {
     tonic: 64,                       // 生成 BGM の調(長調の主音の midi 番号)。64 = E。参考曲 Under a Darkening Sky の解析結果(E メジャー)に合わせた
     bpm: 124,                        // 生成 BGM のテンポ
   },
+  // お題(Quest): Stage ごとに 1 つ。達成で Bonus
+  quest: {
+    bonus: 500,              // 達成の Bonus(Chain 倍率は掛けない)
+    chainTarget: 7,          // 「Add なしで N Chain」の N(Pair の数が少なければそこまで)
+    diagonalTarget: 2,       // 「斜めで N 回消せ」の N
+  },
+  // 温存の投資: World で残した Add を次の World に持ち込む
+  invest: {
+    chainPerAdd: 1,          // 残した Add 1 回ごとに、次の World の開始 Chain +1
+    addsPerHeart: 3,         // 残した Add がこの数ごとに Heart +1(上限まで)
+    chainCap: 5,             // 開始 Chain の上限
+  },
   // Relax モード(まったり): 時間の要素をなくし、音と演出を控えめにする
   relax: {
     bpm: 96,                 // BGM のテンポ(通常 124)

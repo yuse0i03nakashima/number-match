@@ -67,6 +67,7 @@ async function boot() {
     const flashPairs = st.flashUntil !== null && Date.now() < st.flashUntil ? validPairs(st.board) : null;
     ui.renderBoard(st.board, { selected: st.selected, hintPair: st.hintPair, flashPairs, scopeTile: st.scope?.tile ?? null, ...opts });
     ui.renderHud(game);
+    ui.renderQuest(st.quest);
   }
   function soundLabel() {
     document.getElementById('btn-sound-state').textContent = sound.enabled ? 'sound on' : 'sound off';
@@ -201,6 +202,18 @@ async function boot() {
           ui.hideOverlay();
           redraw();
           ui.boardWrap.scrollTo({ top: 0 });
+          if (ev.invest > 0) ui.toast(`前の World で残した Add → 開始 Chain +${ev.invest}`, 2400);
+          break;
+        }
+        case 'quest': {
+          ui.renderQuest(ev.quest);
+          if (ev.done) {
+            sound.digitClear(2); vibrate([30, 40, 80]);
+            fx.floatText(innerWidth / 2, innerHeight * 0.3, `QUEST CLEAR  +${CONFIG.quest.bonus}`, { color: PALETTE.green, size: 26, dy: -40, life: 1.8 });
+            fx.fireworks(2);
+          } else if (ev.failed) {
+            ui.toast(`お題「${ev.quest.text}」は失敗`, 2000);
+          }
           break;
         }
         case 'stageClear': await onStageClear(ev); break;
@@ -320,6 +333,7 @@ async function boot() {
     fx.floatText(cx, cy, 'ALL CLEAR', { color: PALETTE.amber, size: 42, dy: -30, life: 2.0 });
     fx.floatText(cx, cy + 44, `+${fmt(ev.clearBonus + ev.perfectBonus + ev.savedBonus + ev.hintBonus)}${ev.perfect ? '  PERFECT' : ''}`, { color: ev.perfect ? PALETTE.green : PALETTE.white, size: 20, dy: -30, life: 2.0 });
     if (ev.chain > 0) fx.floatText(cx, cy + 76, `CHAIN ×${ev.mult.toFixed(1)} を持ち越し`, { color: heatColor(game.heat), size: 14, dy: -24, life: 2.0 });
+    if (ev.questBonus) fx.floatText(cx, cy + 100, `QUEST CLEAR  +${ev.questBonus}`, { color: PALETTE.green, size: 16, dy: -24, life: 2.0 });
     if (ev.lifeGain) { ui.renderLives(game.run.lives, CONFIG.lives.max, { gained: true }); sound.lifeGain(); }
     ui.renderHud(game);
     if (CONFIG.flow.continueAfterClear && !ev.worldEnd && !ev.isLast) {
@@ -344,7 +358,9 @@ async function boot() {
         ${ev.perfect ? `<div class="row"><span class="k">Perfect Bonus</span><span class="v plus">+${fmt(ev.perfectBonus)}</span></div>` : ''}
         ${ev.savedBonus ? `<div class="row"><span class="k">Add 温存 Bonus(${ev.addsLeft} 回)</span><span class="v plus">+${fmt(ev.savedBonus)}</span></div>` : ''}
         ${ev.hintBonus ? `<div class="row"><span class="k">Hint 温存 Bonus(${ev.hintsLeft} 回)</span><span class="v plus">+${fmt(ev.hintBonus)}</span></div>` : ''}
+        ${ev.questBonus ? `<div class="row"><span class="k">Quest「${ev.quest.text}」</span><span class="v plus">+${fmt(ev.questBonus)}</span></div>` : `<div class="row"><span class="k">Quest「${ev.quest?.text ?? ''}」</span><span class="v">未達成</span></div>`}
         ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
+        ${ev.worldEnd && !ev.isLast ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">開始 Chain +${ev.investChain}${ev.investHearts ? ` · Heart +${ev.investHearts}` : ''}</span></div>` : ''}
         <div class="row"><span class="k">World の Rank</span><span class="v">${rankSummaryWorld(game.worldOf(game.run.stageIndex))}</span></div>
         <div class="row"><span class="k">最高倍率(この Stage / Run)</span><span class="v">×${ev.maxMult.toFixed(1)} / ×${ev.runMaxMult.toFixed(1)}</span></div>
         <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
@@ -572,6 +588,8 @@ async function boot() {
         <b>Heart</b>: 3 つ。尽きると Run は終わり、World のはじめから再開。<br>
         <b>ALL CLEAR</b>: Board を全部消すと +${c.score.stageClear} が入り、Chain と FEVER はそのまま次の Stage へ続く。Result の画面は World(5 Stage)の終わりに出る。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}、残した Hint 1 回ごとに +${c.score.hintSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
         <b>Relax モード</b>(Title かメニューで切り替え): Chain のゲージが減らず、Speed の倍率も無い。BGM はゆっくりで層も控えめ、演出の粒子と揺れも少なめ。得点と Star は通常と同じ基準。<br>
+        <b>Quest</b>: Stage ごとに 1 つお題が出る(「3 を最初に消し切れ」「Add なしで 7 Chain」「斜めで 2 回消せ」「Hint を使わずに Clear」)。達成で +${c.quest.bonus}。どのお題も、その Board で達成できることを確かめてから出している。<br>
+        <b>温存の投資</b>: World(5 Stage)で残した Add の回数が、次の World の開始 Chain(1 回ごとに +${c.invest.chainPerAdd}、上限 +${c.invest.chainCap})と Heart(${c.invest.addsPerHeart} 回ごとに +1)になる。<br>
         <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);

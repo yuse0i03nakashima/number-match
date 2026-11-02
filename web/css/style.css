@@ -338,3 +338,12 @@ body::after { opacity:calc(0.15 + var(--glow) * 0.2 + var(--beat) * 0.15); trans
 body.relax::after { opacity:calc(0.12 + var(--glow) * 0.08 + var(--beat) * 0.05); }
 body.relax .board-wrap { box-shadow:inset 0 0 calc(6px + var(--glow) * 30px) color-mix(in srgb, var(--heat) calc(var(--glow) * 25%), transparent); }
 body.relax .gauge-bar { opacity:0.25; }
+
+/* ---------- お題(Quest) ---------- */
+.quest { display:flex; align-items:center; gap:10px; margin-top:8px; padding:5px 10px; border:1px solid var(--border-light); background:var(--surface); }
+.quest[hidden] { display:none; }
+.quest-label { font-family:var(--font-mono); font-size:10px; letter-spacing:3px; color:var(--text-dim); }
+.quest-text { flex:1; font-family:var(--font-ja); font-size:12px; color:var(--text); }
+.quest-mark { font-family:var(--font-mono); font-size:14px; width:16px; text-align:center; }
+.quest.done { border-color:var(--green); } .quest.done .quest-mark { color:var(--green); } .quest.done .quest-text { color:var(--green); }
+.quest.failed { border-color:var(--border); } .quest.failed .quest-text { color:var(--text-dim); text-decoration:line-through; } .quest.failed .quest-mark { color:var(--text-dim); }

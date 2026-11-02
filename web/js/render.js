@@ -146,6 +146,19 @@ export class Renderer {
     if (on) this.$('hud-fever-fill').style.width = `${Math.round(game.feverRatio(now) * 100)}%`;
   }
 
+  // お題の帯(HUD の下)。進み具合と達成・失敗を示す
+  renderQuest(quest) {
+    const box = this.$('hud-quest');
+    if (!box) return;
+    if (!quest) { box.hidden = true; return; }
+    box.hidden = false;
+    box.classList.toggle('done', !!quest.done);
+    box.classList.toggle('failed', !!quest.failed);
+    const prog = quest.target > 1 ? ` ${Math.min(quest.progress, quest.target)}/${quest.target}` : '';
+    this.$('hud-quest-text').textContent = `${quest.text}${prog}`;
+    this.$('hud-quest-mark').textContent = quest.done ? '✓' : quest.failed ? '✗' : '';
+  }
+
   renderLives(lives, max, { lost = false, gained = false } = {}) {
     const box = this.$('hud-lives');
     const hearts = [];
