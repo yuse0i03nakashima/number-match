@@ -71,7 +71,8 @@ test('倍率: Chain 1 回ごとに +1.0、9 回で上限 ×10 → FEVER', () => 
   assert.equal(ev.fever, true);
   assert.equal(ev.pairPoints, Math.round(C.score.pairBase * ev.diffMult * C.chain.max * C.speed.fastMult * C.fever.pointMult));
   assert.equal(g.tick(5000 + 9000).length, 0);                   // FEVER 中は減らない
-  const end = g.tick(5000 + C.fever.durationMs + 1);
+  assert.equal(g.tick(5000 + C.fever.durationMs + 1).length, 0); // 1 回消したので extendMs だけ延びている
+  const end = g.tick(5000 + C.fever.durationMs + C.fever.extendMs + 1);
   assert.equal(end[0].type, 'feverEnd');
   assert.equal(g.stage.chain, Math.floor(10 * C.fever.endChainRatio));
 });

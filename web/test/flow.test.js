@@ -72,3 +72,19 @@ test('DIGIT CLEAR: ある数字を消し切ると 1 つごとに Bonus、まだ�
   assert.deepEqual(ev.digitsCleared, []);                 // 3 がまだ残っている
   assert.equal(ev.digitPoints, 0);
 });
+
+test('FEVER 中に Pair を消すと残り時間が延び、全体の長さは maxTotalMs まで', () => {
+  const g = new Game(stages, CONFIG, memoryStorage());
+  g.newRun(0);
+  const f = CONFIG.fever;
+  g.stage.fever = { until: 1000 + f.durationMs, startedAt: 1000 };
+  g.stage.board = [5, 5, 1, 9];
+  const ev = g.tap(0, 1500).concat(g.tap(1, 1500)).find((e) => e.type === 'remove');
+  assert.equal(ev.feverExtendMs, f.extendMs);
+  assert.equal(g.stage.fever.until, 1000 + f.durationMs + f.extendMs);
+  // 上限の手前なら、上限までしか延びない
+  g.stage.fever.until = 1000 + f.maxTotalMs - 500;
+  const ev2 = g.tap(2, 1600).concat(g.tap(3, 1600)).find((e) => e.type === 'remove');
+  assert.equal(ev2.feverExtendMs, 500);
+  assert.equal(g.stage.fever.until, 1000 + f.maxTotalMs);
+});

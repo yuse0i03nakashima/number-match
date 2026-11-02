@@ -69,6 +69,21 @@ export class FX {
     }
   }
 
+  // 画面の下から立ちのぼる火の粉(FEVER 中の環境演出)
+  embers(count = 4, colors = [PALETTE.rose, PALETTE.amber, PALETTE.purple]) {
+    const room = this.cfg.maxParticles - this.particles.length;
+    count = Math.max(0, Math.min(count, room));
+    for (let k = 0; k < count; k++) {
+      this.particles.push({
+        x: Math.random() * innerWidth, y: innerHeight + 4,
+        vx: (Math.random() - 0.5) * 40, vy: -(90 + Math.random() * 160),
+        life: 1.6 + Math.random() * 1.2, age: 0, size: 1.5 + Math.random() * 2,
+        color: colors[Math.floor(Math.random() * colors.length)], gravity: -30, drag: 0.995,
+        shape: 'dot', spin: 0, rot: 0,
+      });
+    }
+  }
+
   sparks(x, y, color, count = 10) {
     this.burst(x, y, { color, count, power: 0.6, size: 2 });
   }

@@ -32,6 +32,8 @@ export const CONFIG = {
     pointMult: 2,          // FEVER 中は得点 ×2
     endChainRatio: 0.5,    // FEVER が終わったら Chain をこの割合に戻す
     hintTimeCostMs: 3000,  // FEVER 中の Hint は使用回数ではなく FEVER の残り時間で払う
+    extendMs: 1500,        // FEVER 中に Pair を消すと残り時間がこれだけ延びる
+    maxTotalMs: 25000,     // ただし FEVER 全体の長さはここまで(延長の上限)
   },
   // Hint は Chain 倍率で性格が変わる(3 段階)
   hint: {

@@ -120,7 +120,7 @@ export class Game {
     const invest = worldStart ? (this.run.investChain ?? 0) : 0;
     const chain = Math.max(carry ? carry.chain : 0, invest);
     if (worldStart) { this.run.investChain = 0; this.run.savedAdds = 0; }
-    const fever = carry && carry.fever ? { until: carry.fever.until } : null;
+    const fever = carry && carry.fever ? { until: carry.fever.until, startedAt: carry.fever.startedAt ?? now } : null;
     this.run.stage = {
       board: variant.cells.slice(),
       addsLeft: def.adds,
@@ -135,7 +135,7 @@ export class Game {
       scope: null,           // SCOPE: { tile, misses }
       lastRemoveAt: chain > 0 ? now : null,   // 前の消去の時刻(速さ Bonus と Chain ゲージ用)
       decayed: 0,            // 前の消去から Chain が減った回数
-      fever,                 // FEVER 中なら { until }
+      fever,                 // FEVER 中なら { until, startedAt }
       status: 'play',        // play | clear | failed | runOver | complete
       history: [],           // 感想戦用の手の記録(review.js が読む)
       maxChain: chain,       // この Stage の最高 Chain
@@ -271,6 +271,14 @@ export class Game {
     st.maxChain = Math.max(st.maxChain ?? 0, st.chain);
     this.run.maxChain = Math.max(this.run.maxChain ?? 0, st.chain);
     const mult = this.multiplier;
+    // FEVER 中に消すと残り時間が延びる(全体の長さは maxTotalMs まで)
+    let feverExtendMs = 0;
+    if (st.fever) {
+      const cap = (st.fever.startedAt ?? now) + cfg.fever.maxTotalMs;
+      const extended = Math.max(st.fever.until, Math.min(st.fever.until + cfg.fever.extendMs, cap));
+      feverExtendMs = extended - st.fever.until;
+      st.fever.until = extended;
+    }
     const feverMult = st.fever ? cfg.fever.pointMult : 1;
     const hintedRatio = hinted ? cfg.score.hintedPairRatio : 1;
     const pairPoints = Math.round(cfg.score.pairBase * diff.mult * mult * speed.mult * feverMult * hintedRatio);
@@ -296,13 +304,13 @@ export class Game {
       type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints, digitPoints, digitsCleared,
       chain: st.chain, mult, heat: this.heat, clearedRows, boardBefore: before, board: after,
       path: info, diffMult: diff.mult, labels, speed: speed.tier, speedMult: speed.mult, elapsed,
-      fever: !!st.fever, hinted, scoped, scopeBroken,
+      fever: !!st.fever, feverExtendMs, feverUntil: st.fever?.until ?? null, hinted, scoped, scopeBroken,
     });
     if (scopeBroken) events.push({ type: 'scopeEnd', reason: 'ignored', chain: st.chain, mult: this.multiplier });
     if (questUpdate.changed) events.push(this.questEvent(questUpdate));
     // 倍率が上限に達したら FEVER 開始
     if (!st.fever && mult >= cfg.chain.max) {
-      st.fever = { until: now + cfg.fever.durationMs };
+      st.fever = { until: now + cfg.fever.durationMs, startedAt: now };
       events.push({ type: 'feverStart', until: st.fever.until, durationMs: cfg.fever.durationMs });
     }
     events.push(...this.afterBoardChange());

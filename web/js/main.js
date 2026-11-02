@@ -86,6 +86,7 @@ async function boot() {
     else if (titleShown) bgm.stop();
     bgm.duck(overlayOpen());
     if (!game.stage || game.stage.status !== 'play' || overlayOpen()) return;
+    if (game.inFever && !game.relax) fx.embers(5);          // FEVER 中は火の粉が立ちのぼる
     const now = Date.now();
     const events = game.tick(now);
     if (events.length) handle(events);
@@ -227,9 +228,11 @@ async function boot() {
     }
   }
 
+  const FEVER_COLORS = [PALETTE.rose, PALETTE.amber, PALETTE.purple, PALETTE.white];
+  let feverTick = 0;
   async function onRemove(ev) {
     busy = true;
-    const color = ev.fever ? PALETTE.rose : heatColor(ev.heat);
+    const color = ev.fever ? FEVER_COLORS[feverTick++ % FEVER_COLORS.length] : heatColor(ev.heat);
     const ci = ui.cellCenter(ev.i), cj = ui.cellCenter(ev.j);
     const speedBoost = ev.speed === 'fast' ? 1 : ev.speed === 'quick' ? 0.5 : 0;   // 速いほど派手に
     const feverBoost = ev.fever ? 1 : 0;                                            // FEVER 中はすべて増量
@@ -273,6 +276,12 @@ async function boot() {
     sound.remove(ev.chain, ev.heat);
     vibrate(12 + Math.round(ev.heat * 20));
     fx.shake(ui.boardWrap, CONFIG.fx.shakeBase * (0.5 + ev.heat * 1.5 + speedBoost + feverBoost) * fxScale, 160);
+    if (ev.fever && !game.relax) fx.fireworks(1);
+    if (ev.feverExtendMs > 0) {
+      const fb = document.getElementById('hud-fever')?.getBoundingClientRect();
+      if (fb) fx.floatText(fb.left + fb.width * 0.5, fb.top + fb.height, `FEVER +${(ev.feverExtendMs / 1000).toFixed(1)}s`, { color: PALETTE.rose, size: 13 * (0.7 + 0.3 * fxScale), dy: 22, life: 0.9 });
+      ui.renderHud(game);
+    }
 
     // 2. 行が消えるときはヒットストップのあと横一閃+大量の粒子+揺れ+画面の膨らみ。
     //    連続で行を消すほど(lineStreak)粒子・揺れ・フラッシュ・音が段階的に強くなる。
@@ -576,7 +585,7 @@ async function boot() {
         <b>消し方</b>: 1 つ目の数字をタップし、2 つ目をタップする。Pair でなければ 2 つ目が選び直しになる。<br>
         <b>Score</b>: 1 Pair の得点 = ${c.score.pairBase} 点 × 難しさ倍率 × Chain 倍率 × Speed 倍率。難しさ倍率は、横の隣どうし ×1.0、縦 ×${d.vertical}、行をまたぐ ×${d.wrap}、斜め ×${d.diagonal}。2 つの間の空マス 1 つごとに +${d.gapPerCell}(他を消して初めて可能になる消し方)、斜めなら +${d.diagonalGapPerCell}。<br>
         <b>Chain</b>: Pair を消すたびに Chain 倍率が +${c.chain.step}(最大 ×${c.chain.max})。Add を使うと途切れて ×1.0 に戻る。${c.chain.decayGraceMs / 1000} 秒消さないでいると、${c.chain.decayStepMs / 1000} 秒ごとに 1 段階ずつ減る(ゲージ)。<br>
-        <b>FEVER</b>: 倍率が ×${c.chain.max} に達すると ${c.fever.durationMs / 1000} 秒間 Score ×${c.fever.pointMult}。その間 Chain は減らない。終わると Chain は半分になる。<br>
+        <b>FEVER</b>: 倍率が ×${c.chain.max} に達すると ${c.fever.durationMs / 1000} 秒間 Score ×${c.fever.pointMult}。その間 Chain は減らず、Pair を消すたびに残り時間が ${c.fever.extendMs / 1000} 秒延びる(全体で ${c.fever.maxTotalMs / 1000} 秒まで)。終わると Chain は半分になる。<br>
         <b>Speed</b>: 前の消去から ${c.speed.quickMs / 1000} 秒以内なら QUICK(×${c.speed.quickMult})、${c.speed.fastMs / 1000} 秒以内なら FAST(×${c.speed.fastMult})。<br>
         <b>DIGIT CLEAR</b>: ある数字(たとえば 3)を Board から全部消し切ると、1 つの数字ごとに +${c.score.digitClear} × Chain 倍率。Add で戻ってきたらまた狙える。<br>
         <b>Line</b>: 1 行まるごと空になるとその行が Board から消え、${c.score.rowClear} 点 × (同時に消えた行数の 2 乗) × Chain 倍率が加算される。<br>
