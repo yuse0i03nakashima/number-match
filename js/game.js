@@ -171,7 +171,7 @@ export class Game {
       status: 'play',        // play | clear | failed | runOver | complete
       history: [],           // 感想戦用の手の記録(review.js が読む)
       maxChain: chain,       // この Stage の最高 Chain
-      quest: makeQuest(this.cfg, def.stage, variant.cells, { exclude: this.classic ? ['chain'] : [] }),   // この Stage のお題(CLASSIC に Chain のお題は無い)
+      quest: makeQuest(this.cfg, def.stage, variant.cells, { exclude: this.classic ? ['chain', 'noHint'] : [] }),   // この Stage のお題(CLASSIC に Chain のお題は無く、Hint なしは Perfect と重なるので出さない)
       firstDigitCleared: null,
     };
     this.save();
