@@ -140,22 +140,22 @@ body.fever { --grid-color:rgba(240,98,146,0.55); animation:fever-bg 1.2s ease-in
 body.fever::after { opacity:0.5; animation:fever-grid 0.6s ease-in-out infinite alternate; }
 @keyframes fever-grid { 0%{opacity:0.35} 100%{opacity:0.75} }
 body.fever .hud, body.fever .controls { border-color:rgba(240,98,146,0.5); }
-/* FEVER の追加演出(Relax では付けない): 画面の縁の光、マスの枠の色の巡り、Score の脈 */
-body.fever:not(.relax)::before {
+/* FEVER の追加演出(CLASSIC では付けない): 画面の縁の光、マスの枠の色の巡り、Score の脈 */
+body.fever:not(.classic)::before {
   content:''; position:fixed; inset:0; pointer-events:none; z-index:1;
   box-shadow:inset 0 0 90px 12px rgba(240,98,146,0.32);
   animation:fever-edge 0.8s ease-in-out infinite alternate;
 }
 @keyframes fever-edge { 0%{box-shadow:inset 0 0 70px 6px rgba(240,98,146,0.22)} 100%{box-shadow:inset 0 0 120px 20px rgba(167,139,250,0.4)} }
-body.fever:not(.relax) .cell:not(.empty) { animation:fever-cell 1.4s ease-in-out infinite alternate; }
+body.fever:not(.classic) .cell:not(.empty) { animation:fever-cell 1.4s ease-in-out infinite alternate; }
 @keyframes fever-cell {
   0%{border-color:rgba(240,98,146,0.8); text-shadow:0 0 8px rgba(240,98,146,0.6)}
   50%{border-color:rgba(245,166,35,0.8); text-shadow:0 0 8px rgba(245,166,35,0.6)}
   100%{border-color:rgba(167,139,250,0.9); text-shadow:0 0 10px rgba(167,139,250,0.7)}
 }
-body.fever:not(.relax) .score { color:var(--rose); animation:fever-score 0.6s ease-in-out infinite alternate; }
+body.fever:not(.classic) .score { color:var(--rose); animation:fever-score 0.6s ease-in-out infinite alternate; }
 @keyframes fever-score { 0%{transform:scale(1); text-shadow:0 0 6px rgba(240,98,146,0.4)} 100%{transform:scale(1.08); text-shadow:0 0 18px rgba(240,98,146,0.9)} }
-body.fever:not(.relax) .fever-label { animation:fever-label 0.4s steps(2) infinite; }
+body.fever:not(.classic) .fever-label { animation:fever-label 0.4s steps(2) infinite; }
 @keyframes fever-label { 0%{color:var(--rose)} 100%{color:var(--amber)} }
 
 /* ---------- Board ---------- */
@@ -359,10 +359,22 @@ body::after { opacity:calc(0.15 + var(--glow) * 0.2 + var(--beat) * 0.15); trans
 .rv-legend { font-family:var(--font-mono); font-size:10px; color:var(--text-dim); margin-top:6px; letter-spacing:1px; }
 .rv-legend .mine { color:var(--red); } .rv-legend .best { color:var(--amber); }
 
-/* Relax モード: 背景の脈動と光を弱める */
-body.relax::after { opacity:calc(0.12 + var(--glow) * 0.08 + var(--beat) * 0.05); }
-body.relax .board-wrap { box-shadow:inset 0 0 calc(6px + var(--glow) * 30px) color-mix(in srgb, var(--heat) calc(var(--glow) * 25%), transparent); }
-body.relax .gauge-bar { opacity:0.25; }
+/* CLASSIC モード: 背景の脈動と光を弱め、熱の色は落ち着いた青緑に固定 */
+body.classic { --heat:#4fa3a0 !important; }
+body.classic::after { opacity:0.14; }
+body.classic .board-wrap { box-shadow:none; }
+body.classic .cell.selected { box-shadow:0 0 0 1px var(--heat); }
+
+/* Title のモードのタブ */
+.mode-tabs { display:flex; margin-top:14px; border-bottom:1px solid var(--border-light); }
+.mode-tab {
+  appearance:none; flex:1; background:transparent; border:none; border-bottom:2px solid transparent; margin-bottom:-1px;
+  padding:10px 0; font-family:var(--font-mono); font-size:11px; letter-spacing:3px; color:var(--text-dim); cursor:pointer;
+  transition:color 0.15s, border-color 0.15s;
+}
+.mode-tab.on { color:var(--text); border-bottom-color:var(--blue); }
+.mode-tab:active { transform:translateY(1px); }
+.mode-desc { min-height:2.6em; }
 
 /* ---------- お題(Quest) ---------- */
 .quest { display:flex; align-items:center; gap:10px; margin-top:8px; padding:5px 10px; border:1px solid var(--border-light); background:var(--surface); }

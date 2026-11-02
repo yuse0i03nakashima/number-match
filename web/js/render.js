@@ -136,15 +136,18 @@ export class Renderer {
     const run = game.run, st = game.stage, def = game.stageDef;
     if (!run || !st || !def) return;
     this.$('hud-stage-label').textContent = `STAGE ${String(def.stage).padStart(2, '0')}`;
-    this.$('hud-world-label').textContent = `world ${game.worldOf(run.stageIndex) + 1} · ${def.cellsCount} cells${game.relax ? ' · relax' : ''}`;
+    this.$('hud-world-label').textContent = `world ${game.worldOf(run.stageIndex) + 1} · ${def.cellsCount} cells${game.classic ? ' · classic' : ''}`;
     this.$('hud-score').textContent = run.score.toLocaleString('en-US');
+    // CLASSIC に Chain・Heart は無い
+    this.$('hud-chain').hidden = game.classic;
+    this.$('hud-lives').hidden = game.classic;
     this.$('hud-mult').textContent = `×${game.multiplier.toFixed(1)}`;
     this.$('hud-chain-fill').style.width = `${Math.round(game.heat * 100)}%`;
     this.setHeat(game.heat);
     this.renderGauge(game, now);
     this.renderFever(game, now);
     this.renderLives(run.lives, game.cfg.lives.max);
-    this.renderAddButton(st.addsLeft, def.adds);
+    this.renderAddButton(st.addsLeft, st.addsTotal ?? def.adds);
     this.renderHintButton(game);
   }
 

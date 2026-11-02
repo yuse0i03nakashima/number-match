@@ -16,10 +16,11 @@ import { solve } from './solver.js';
 const ORDER = ['digitFirst', 'chain', 'diagonal', 'noHint'];
 
 /** Stage 番号と Board からお題を 1 つ決める。 */
-export function makeQuest(cfg, stage, board, { budget = 1500 } = {}) {
+export function makeQuest(cfg, stage, board, { budget = 1500, exclude = [] } = {}) {
   const start = (stage * 7) % ORDER.length;
   for (let k = 0; k < ORDER.length; k++) {
     const type = ORDER[(start + k) % ORDER.length];
+    if (exclude.includes(type)) continue;
     const q = tryQuest(cfg, type, stage, board, budget);
     if (q) return q;
   }

@@ -94,13 +94,21 @@ export const CONFIG = {
     addsPerHeart: 3,         // 残した Add がこの数ごとに Heart +1(上限まで)
     chainCap: 5,             // 開始 Chain の上限
   },
-  // Relax モード(まったり): 時間の要素をなくし、音と演出を控えめにする
-  relax: {
+  // CLASSIC モード(本家 Number Match に近い遊び方): Chain 倍率・ゲージ・FEVER・Speed・Heart が無く、得点は定額。
+  // 残すリスクとリターン: Add と Hint の温存 Bonus、Perfect(Add も Hint も使わず Clear)、Quest、World の終わりの投資
+  classic: {
+    addsPerStage: 5,         // Add の回数(通常は Stage ごとに 2〜3)
+    pathBonus: 5,            // 横の隣どうし以外(縦・斜め・またぎ・離れた Pair)の小さな加点(倍率の代わり)
+    digitClear: 50,          // DIGIT CLEAR の点(通常 150 × 倍率)
+    rankPerCell: 40,         // Rank の基準点 = マス数 × これ(通常 100)
+    failKeepRatio: 0.5,      // Dead End で Add も無いとき Stage は失敗。Stage 得点はこの割合だけ残る(Heart は減らない)
+    investAddsPer: 3,        // World で残した Add がこの数ごとに、次の World の各 Stage の Add +1
+    investAddsCap: 2,        // その上限
     bpm: 96,                 // BGM のテンポ(通常 124)
-    maxLayers: 2,            // BGM の層の上限(パッド+撥弦、ドラムまで。ベースとリードは入らない)
+    maxLayers: 1,            // BGM の層の上限(パッドと撥弦だけ。ドラム・ベース・リードは入らない)
     synthVolume: 0.22,       // BGM の音量(通常 0.30)
-    fxScale: 0.55,           // 粒子・揺れの量の倍率
-    feverCalm: true,         // FEVER 中も BGM の層は増やさず、ポンプもしない
+    fxScale: 0.5,            // 粒子の量の倍率。揺れ・ヒットストップ・画面の点滅は無し
+    feverCalm: true,
   },
   audio: {
     masterVolume: 0.35,
