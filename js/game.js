@@ -56,6 +56,8 @@ export class Game {
   }
 
   // ---------- 参照 ----------
+  get relax() { return !!this.progress.relax; }          // Relax モード: ゲージが減らず、Speed Bonus も無い
+  setRelax(on) { this.progress.relax = !!on; this.save(); }
   get stage() { return this.run?.stage ?? null; }
   get stageDef() { return this.run ? this.stages[this.run.stageIndex] : null; }
   multiplierFor(chain) {
@@ -85,7 +87,7 @@ export class Game {
   gaugeRatio(now) {
     const st = this.stage, c = this.cfg.chain;
     if (!st || st.chain <= 0 || st.lastRemoveAt === null) return 0;
-    if (st.fever) return 1;
+    if (st.fever || this.relax) return 1;
     const t = now - st.lastRemoveAt;
     if (t < c.decayGraceMs) return 1 - t / c.decayGraceMs;
     return 1 - ((t - c.decayGraceMs) % c.decayStepMs) / c.decayStepMs;
@@ -164,7 +166,7 @@ export class Game {
       st.decayed = 0;
       events.push({ type: 'feverEnd', chain: st.chain, mult: this.multiplier });
     }
-    if (!st.fever && st.chain > 0 && st.lastRemoveAt !== null) {
+    if (!st.fever && !this.relax && st.chain > 0 && st.lastRemoveAt !== null) {
       const t = now - st.lastRemoveAt - cfg.chain.decayGraceMs;
       if (t > 0) {
         const steps = Math.floor(t / cfg.chain.decayStepMs) + 1 - st.decayed;
@@ -248,7 +250,7 @@ export class Game {
     const info = pathInfo(b, i, j);
     const diff = difficultyMult(cfg.difficulty, info);
     const elapsed = st.lastRemoveAt === null ? Infinity : now - st.lastRemoveAt;
-    const speed = scoped ? { tier: null, mult: 1 } : speedTier(cfg.speed, elapsed);   // SCOPE の補助を受けた Pair に Speed は付かない
+    const speed = scoped || this.relax ? { tier: null, mult: 1 } : speedTier(cfg.speed, elapsed);   // SCOPE の補助を受けた Pair と Relax モードに Speed は付かない
     st.lastRemoveAt = now;
     st.decayed = 0;
 

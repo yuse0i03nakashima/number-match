@@ -43,6 +43,14 @@ async function boot() {
     },
     get label() { return this.mode === 'synth' ? 'ON' : 'OFF'; },
   };
+  // Relax モード: 時間の要素をなくし、BGM と演出を控えめに
+  let fxScale = 1;
+  function applyRelax() {
+    const on = game.relax;
+    synth.setCalm(on ? { bpm: CONFIG.relax.bpm, maxLayers: CONFIG.relax.maxLayers, volume: CONFIG.relax.synthVolume, feverCalm: CONFIG.relax.feverCalm } : null);
+    fxScale = on ? CONFIG.relax.fxScale : 1;
+    document.body.classList.toggle('relax', on);
+  }
   // 最初のタップで AudioContext ができたら BGM をつなぐ(ensure は何度呼んでもよい)
   const ensureAudio = () => { if (sound.ensure()) bgm.attach(sound.ctx); };
   // 拍に合わせて背景を脈打たせる
@@ -73,7 +81,7 @@ async function boot() {
   // Chain ゲージと FEVER は時間で動くので、定期的に進めて HUD を描き直す
   setInterval(() => {
     // BGM: Stage 中は Chain の熱と FEVER に合わせ、Title では止める。オーバーレイ中は小さく
-    if (game.stage?.status === 'play' || game.stage?.status === 'clear') { bgm.setHeat(game.heat); bgm.setFever(game.inFever); bgm.play(); }
+    if (game.stage?.status === 'play' || game.stage?.status === 'clear') { bgm.setHeat(game.relax ? Math.min(0.5, game.heat) : game.heat); bgm.setFever(game.inFever); bgm.play(); }
     else if (titleShown) bgm.stop();
     bgm.duck(overlayOpen());
     if (!game.stage || game.stage.status !== 'play' || overlayOpen()) return;
@@ -219,7 +227,7 @@ async function boot() {
       fx.flashLine(ci.x, ci.y, cj.x, cj.y, color, 3 + ev.heat * 3 + speedBoost * 2 + feverBoost * 2);
       fx.trail(ci.x, ci.y, cj.x, cj.y, color, 10 + Math.round(ev.heat * 10 + feverBoost * 12));
       const count = CONFIG.fx.particlesPerRemove + Math.round(ev.heat * 24 + speedBoost * 12 + feverBoost * 24);
-      for (const c of [ci, cj]) fx.burst(c.x, c.y, { color, count, power, size: 3 + speedBoost + feverBoost });
+      for (const c of [ci, cj]) fx.burst(c.x, c.y, { color, count: Math.round(count * fxScale), power: power * (0.6 + 0.4 * fxScale), size: 3 + speedBoost + feverBoost });
       if (ev.heat > 0.5 || speedBoost > 0 || feverBoost) fx.ring(mx, my, color, 40 + ev.heat * 60 + speedBoost * 30 + feverBoost * 40);
       const target = ui.scoreCenter();
       fx.flyText(mx, my, target.x, target.y, `+${ev.pairPoints}`, { color, size: 18 + ev.heat * 10 + speedBoost * 4 + feverBoost * 6, dur: 0.5 });
@@ -249,7 +257,7 @@ async function boot() {
     ui.markRemoving(ev.i, ev.j);
     sound.remove(ev.chain, ev.heat);
     vibrate(12 + Math.round(ev.heat * 20));
-    fx.shake(ui.boardWrap, CONFIG.fx.shakeBase * (0.5 + ev.heat * 1.5 + speedBoost + feverBoost), 160);
+    fx.shake(ui.boardWrap, CONFIG.fx.shakeBase * (0.5 + ev.heat * 1.5 + speedBoost + feverBoost) * fxScale, 160);
 
     // 2. 行が消えるときはヒットストップのあと横一閃+大量の粒子+揺れ+画面の膨らみ。
     //    連続で行を消すほど(lineStreak)粒子・揺れ・フラッシュ・音が段階的に強くなる。
@@ -517,9 +525,11 @@ async function boot() {
         ${canResume ? `<button class="btn btn-primary" id="ov-resume">Continue (STAGE ${pad2(game.stageDef.stage)})</button>` : ''}
         <button class="btn ${canResume ? 'btn-ghost' : 'btn-primary'}" id="ov-new">New Game</button>
         <div class="worlds">${worlds.join('')}</div>
+        <button class="btn btn-ghost" id="ov-relax">Relax モード: ${game.relax ? 'ON' : 'OFF'}<small>　時間の要素なし・静かな BGM・演出控えめ</small></button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
       </div>
       <div class="meta">rules verified</div>`);
+    card.querySelector('#ov-relax').onclick = () => { game.setRelax(!game.relax); applyRelax(); showTitle(); };
     card.querySelector('#ov-resume')?.addEventListener('click', () => {
       ensureAudio();
       const st = game.stage;
@@ -561,6 +571,7 @@ async function boot() {
         <b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP になる。押すと Heart −1 だが、Stage 得点の半分は獲得できる。それに気づかず Hint を押すと Heart −1 で、Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。<br>
         <b>Heart</b>: 3 つ。尽きると Run は終わり、World のはじめから再開。<br>
         <b>ALL CLEAR</b>: Board を全部消すと +${c.score.stageClear} が入り、Chain と FEVER はそのまま次の Stage へ続く。Result の画面は World(5 Stage)の終わりに出る。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}、残した Hint 1 回ごとに +${c.score.hintSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
+        <b>Relax モード</b>(Title かメニューで切り替え): Chain のゲージが減らず、Speed の倍率も無い。BGM はゆっくりで層も控えめ、演出の粒子と揺れも少なめ。得点と Star は通常と同じ基準。<br>
         <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
@@ -576,6 +587,7 @@ async function boot() {
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
+        <button class="btn btn-ghost" id="ov-relax">Relax: ${game.relax ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
         ${inPlay ? '<button class="btn btn-danger" id="ov-giveup">GIVE UP(Heart −1 · 得点は半分残る)</button>' : ''}
@@ -583,6 +595,7 @@ async function boot() {
     card.querySelector('#ov-back').onclick = () => { game.resume(Date.now()); ui.hideOverlay(); };
     card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showMenu(); };
     card.querySelector('#ov-bgm').onclick = () => { bgm.cycle(); showMenu(); };
+    card.querySelector('#ov-relax').onclick = () => { game.setRelax(!game.relax); applyRelax(); showMenu(); };
     card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showMenu; };
     card.querySelector('#ov-title').onclick = showTitle;
     card.querySelector('#ov-giveup')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.giveUp()); });
@@ -604,6 +617,7 @@ async function boot() {
   if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') globalThis.__ten = { game, bgm, sound };
 
   // ---------- 起動 ----------
+  applyRelax();
   if (game.run && game.stage && game.stage.status === 'play') redraw();
   showTitle();
 

@@ -80,6 +80,14 @@ export const CONFIG = {
     tonic: 64,                       // 生成 BGM の調(長調の主音の midi 番号)。64 = E。参考曲 Under a Darkening Sky の解析結果(E メジャー)に合わせた
     bpm: 124,                        // 生成 BGM のテンポ
   },
+  // Relax モード(まったり): 時間の要素をなくし、音と演出を控えめにする
+  relax: {
+    bpm: 96,                 // BGM のテンポ(通常 124)
+    maxLayers: 2,            // BGM の層の上限(パッド+撥弦、ドラムまで。ベースとリードは入らない)
+    synthVolume: 0.22,       // BGM の音量(通常 0.30)
+    fxScale: 0.55,           // 粒子・揺れの量の倍率
+    feverCalm: true,         // FEVER 中も BGM の層は増やさず、ポンプもしない
+  },
   audio: {
     masterVolume: 0.35,
   },
