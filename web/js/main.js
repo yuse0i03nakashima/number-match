@@ -292,7 +292,23 @@ async function boot() {
     sound.remove(ev.chain, ev.heat);
     vibrate(12 + Math.round(ev.heat * 20));
     fx.shake(ui.boardWrap, CONFIG.fx.shakeBase * (0.5 + ev.heat * 1.5 + speedBoost + feverBoost) * fxScale, 160);
-    if (ev.fever && !game.classic) fx.fireworks(1);
+    if (ev.fever && !game.classic && ev.clearedRows.length === 0 && ci && cj) {
+      // FEVER 中は 1 Pair ごとに LINE 消去なみの手応え: ヒットストップ → 画面の膨らみ → 2 マスの行を横一閃 → 輪と粒子 → 和音
+      fx.freeze(60);
+      await sleep(70);
+      punch();
+      for (const r of new Set([Math.floor(ev.i / WIDTH), Math.floor(ev.j / WIDTH)])) {
+        const rr = ui.rowRect(r);
+        if (rr) { fx.rowSweep(rr.y, rr.h, color); fx.rowSweep(rr.y, rr.h, PALETTE.white); }
+      }
+      fx.ring(mx, my, color, 150);
+      fx.burst(mx, my, { color: PALETTE.white, count: Math.round(44 * fxScale), power: 1.5, size: 3.5 });
+      fx.trail(ci.x, ci.y, cj.x, cj.y, PALETTE.white, 16);
+      fx.shake(ui.boardWrap, 6, 260);
+      fx.fireworks(1);
+      sound.feverHit(feverTick);
+      vibrate([20, 30, 40]);
+    }
     if (ev.feverExtendMs > 0) {
       const fb = document.getElementById('hud-fever')?.getBoundingClientRect();
       if (fb) fx.floatText(fb.left + fb.width * 0.5, fb.top + fb.height, `FEVER +${(ev.feverExtendMs / 1000).toFixed(1)}s`, { color: PALETTE.rose, size: 13 * (0.7 + 0.3 * fxScale), dy: 22, life: 0.9 });
