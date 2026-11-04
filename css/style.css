@@ -401,7 +401,7 @@ body.classic .cell.selected { box-shadow:0 0 0 1px var(--heat); }
   padding:calc(env(safe-area-inset-top, 0px) + 12px) var(--gutter) calc(env(safe-area-inset-bottom, 0px) + 12px);
   --reel-cell:clamp(56px, 18vw, 84px);
 }
-.slot[hidden] { display:none; }
+.slot[hidden], .app[hidden] { display:none; }   /* スロット中は THE TEN の画面を隠す(hidden 属性を display:flex より優先) */
 .slot-top { display:flex; justify-content:space-between; align-items:flex-end; padding-bottom:10px; border-bottom:1px solid var(--border); }
 .slot-top .label { font-family:var(--font-mono); font-size:10px; letter-spacing:3px; color:var(--text-dim); }
 .slot-top-r { text-align:right; }
