@@ -441,3 +441,19 @@ body.classic .cell.selected { box-shadow:0 0 0 1px var(--heat); }
 .slot-pay b { color:var(--text-muted); font-weight:400; margin-right:4px; }
 .slot-stats { margin-top:auto; text-align:center; font-family:var(--font-mono); font-size:10px; letter-spacing:1px; color:var(--text-dim); padding-bottom:8px; }
 .slot-controls { margin-top:0; }
+
+/* スロットの追加演出・BET の選択・必殺技 */
+.reel.reach { border-color:var(--rose); animation:reach 0.3s ease-in-out infinite alternate; }
+@keyframes reach { 0%{box-shadow:0 0 10px rgba(240,98,146,0.5), inset 0 0 0 1px rgba(240,98,146,0.6)} 100%{box-shadow:0 0 28px rgba(240,98,146,0.95), inset 0 0 0 2px rgba(245,166,35,0.9)} }
+body.fever .reel { animation:fever-cell 1.2s ease-in-out infinite alternate; }
+.slot.punch { animation:punch 0.28s cubic-bezier(.2,1.4,.4,1); }
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 10px; }
+.chips .chip { padding:8px 12px; font-size:11px; }
+.chips .chip.on { border-color:var(--amber); color:var(--amber); }
+.bet-input { display:flex; gap:8px; }
+.bet-input input {
+  flex:1; appearance:none; background:var(--surface); border:1px solid var(--border-light); color:var(--text);
+  font-family:var(--font-mono); font-size:18px; padding:10px 12px; min-width:0;
+}
+body.skill .board-wrap { box-shadow:inset 0 0 40px rgba(240,98,146,0.25); }
+body.skill .cell:not(.empty) { border-color:rgba(240,98,146,0.6); }

@@ -51,7 +51,22 @@ async function boot() {
   const slotEl = document.getElementById('slot');
   let slotActive = false;
   let titleTab = (() => { try { return localStorage.getItem('numbermatch.tab') || game.mode; } catch { return game.mode; } })();
-  const slotView = new SlotView(slotEl, { slot, game, fx, sound, vibrate, onMenu: () => showSlotMenu() });
+  const slotView = new SlotView(slotEl, { slot, game, fx, sound, vibrate, onMenu: () => showSlotMenu(), onBet: () => showBetPicker() });
+  // 賭け枚数を選ぶ(決まった枚数のほか、任意の枚数も入力できる)
+  function showBetPicker() {
+    const chips = CONFIG.slot.bets.map((b) => `<button class="btn btn-ghost chip ${slot.bet === b ? 'on' : ''}" data-bet="${b}" ${game.coins < b ? 'disabled' : ''}>${fmt(b)}</button>`).join('');
+    const card = ui.showOverlay(`
+      <div class="eyebrow">bet</div>
+      <h1>Bet</h1>
+      <div class="ja">Coin ${fmt(game.coins)}。5 枚以上で 5 ライン、3〜4 枚で横 3 本、1〜2 枚は中段だけ。払い戻しは枚数に比例。</div>
+      <div class="chips">${chips}<button class="btn btn-ghost chip" data-bet="max" ${game.coins < 1 ? 'disabled' : ''}>MAX(${fmt(game.coins)})</button></div>
+      <div class="bet-input"><input type="number" id="bet-input" min="1" max="${Math.max(1, game.coins)}" step="1" value="${slot.bet}" inputmode="numeric"><button class="btn btn-primary" id="bet-ok">OK</button></div>
+      <div class="actions"><button class="btn btn-ghost" id="ov-back">Back</button></div>`);
+    const apply = (b) => { slot.setBet(Math.min(Math.max(1, b), Math.max(1, game.coins))); slotView.renderAll(); ui.hideOverlay(); sound.select(); };
+    card.querySelectorAll('[data-bet]').forEach((b) => b.addEventListener('click', () => apply(b.dataset.bet === 'max' ? game.coins : Number(b.dataset.bet))));
+    card.querySelector('#bet-ok').onclick = () => apply(Number(card.querySelector('#bet-input').value) || 1);
+    card.querySelector('#ov-back').onclick = () => ui.hideOverlay();
+  }
   function showSlot() {
     ensureAudio();
     ui.hideOverlay();
@@ -194,6 +209,19 @@ async function boot() {
           break;
         }
         case 'noCoins': ui.toast(`Coin が足りない(${fmt(ev.price)} 必要、残り ${fmt(ev.coins)})`, 2200); sound.invalid(); break;
+        case 'skillArmed': {
+          sound.slotLamp(); vibrate([20, 30, 20]);
+          document.body.classList.add('skill');
+          ui.toast(ev.skill === 'line' ? `LINE BREAK: 消したい行の数字をタップ(${fmt(ev.price)} coin)。空マスで取りやめ` : `SNIPE SHOT: 数字を 2 つタップ。Pair なら位置に関係なく消える(${fmt(ev.price)} coin)。空マスで取りやめ`, 4000);
+          break;
+        }
+        case 'skillCancel': document.body.classList.remove('skill'); redraw(); ui.toast('取りやめ', 1200); break;
+        case 'skillSnipe': {
+          document.body.classList.remove('skill');
+          ui.toast(`SNIPE SHOT −${fmt(ev.price)} coin(残り ${fmt(ev.coins)})`, 2000);
+          break;
+        }
+        case 'skillLine': await onSkillLine(ev); break;
         case 'noShop': sound.invalid(); break;
         case 'deadEnd': {
           // CLASSIC: 消せる Pair が無くなったらすぐ知らせる(本家と同じ)
@@ -415,6 +443,38 @@ async function boot() {
     busy = false;
   }
 
+  // 必殺技 LINE BREAK: 行消しの演出をそのまま使う(ヒットストップ → 横一閃 → 粒子 → 得点)
+  async function onSkillLine(ev) {
+    busy = true;
+    document.body.classList.remove('skill');
+    lineStreak = 0;
+    const r = ui.rowRect(ev.row);
+    fx.freeze(CONFIG.fx.hitStopMs + 60);
+    await sleep(CONFIG.fx.hitStopMs + 80);
+    ui.markRowsRemoving([ev.row]);
+    punch();
+    if (r) {
+      fx.rowSweep(r.y, r.h, PALETTE.rose); fx.rowSweep(r.y, r.h, PALETTE.white);
+      for (let k = 0; k < WIDTH; k++) {
+        const x = innerWidth / 2 + (k - 4) * (r.h + 6);
+        fx.burst(x, r.y + r.h / 2, { color: k % 2 ? PALETTE.rose : PALETTE.white, count: Math.round(14 * fxScale), power: 1.6, size: 4 });
+      }
+      fx.ring(innerWidth / 2, r.y + r.h / 2, PALETTE.rose, 200);
+      const target = ui.scoreCenter();
+      fx.floatText(innerWidth / 2, r.y - 30, `LINE BREAK  +${ev.points}`, { color: PALETTE.rose, size: 26, dy: -60, life: 1.4 });
+      fx.flyText(innerWidth / 2, r.y - 30, target.x, target.y, `+${ev.points}`, { color: PALETTE.rose, size: 20, dur: 0.6, delay: 0.5 });
+    }
+    fx.flash('rgba(240,98,146,0.25)');
+    fx.shake(ui.boardWrap, 10, 400);
+    sound.rowClear(1, 3);
+    vibrate([40, 40, 80, 40, 120]);
+    ui.toast(`LINE BREAK −${fmt(ev.price)} coin(残り ${fmt(ev.coins)})`, 2000);
+    await sleep(300);
+    redraw();
+    setTimeout(() => ui.bumpScore(), 250);
+    busy = false;
+  }
+
   async function onStageClear(ev) {
     busy = true;
     await sleep(200);
@@ -458,7 +518,7 @@ async function boot() {
         ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
         ${ev.worldEnd && !ev.isLast && ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">各 Stage で Add +${ev.investAdds}</span></div>` : ''}
         ${ev.worldEnd && !ev.isLast && !ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">開始 Chain +${ev.investChain}${ev.investHearts ? ` · Heart +${ev.investHearts}` : ''}</span></div>` : ''}
-        <div class="row"><span class="k">この Stage の最高得点</span><span class="v${ev.stageBestUpdated ? ' plus' : ''}">${fmt(ev.stageBest)}${ev.stageBestUpdated && ev.prevBest ? ' NEW!' : ''}</span></div>
+        <div class="row"><span class="k">この Stage の最高得点${ev.coinUsed ? '(Coin を使ったので更新なし)' : ''}</span><span class="v${ev.stageBestUpdated ? ' plus' : ''}">${fmt(ev.stageBest)}${ev.stageBestUpdated && ev.prevBest ? ' NEW!' : ''}</span></div>
         <div class="row"><span class="k">Coin</span><span class="v plus">+${fmt(ev.coinsGained)} → ${fmt(ev.coins)}</span></div>
         <div class="row"><span class="k">World の Rank</span><span class="v">${rankSummaryWorld(game.worldOf(game.run.stageIndex))}</span></div>
         ${ev.classic ? '' : `<div class="row"><span class="k">最高倍率(この Stage / Run)</span><span class="v">×${ev.maxMult.toFixed(1)} / ×${ev.runMaxMult.toFixed(1)}</span></div>`}
@@ -759,7 +819,8 @@ async function boot() {
         <b>Quest</b>: Stage ごとに 1 つお題が出る(「3 を最初に消し切れ」「Add なしで 7 Chain」「斜めで 2 回消せ」「Hint を使わずに Clear」)。達成で +${c.quest.bonus}。どのお題も、その Board で達成できることを確かめてから出している。<br>
         <b>温存の投資</b>: World(5 Stage)で残した Add の回数が、次の World の開始 Chain(1 回ごとに +${c.invest.chainPerAdd}、上限 +${c.invest.chainCap})と Heart(${c.invest.addsPerHeart} 回ごとに +1)になる。<br>
         <b>Coin とショップ</b>: Stage を Clear すると、その Stage の得点がそのまま Coin として貯まる(Best Score とは別の累計。スロットでも使う)。Hint が尽きると HINT ボタンが BUY HINT(NORMAL ${fmt(c.shop.normal.hint)} / CLASSIC ${fmt(c.shop.classic.hint)} coin)、Add が尽きると ADD ボタンが BUY ADD(${fmt(c.shop.normal.add)} / ${fmt(c.shop.classic.add)} coin)に変わる。Heart はメニューから ${fmt(c.shop.normal.heart)} coin(NORMAL だけ)。買った Add・Hint は温存 Bonus と投資に数えない。買った Add を使えば Perfect は失う。<br>
-        <b>SLOT</b>(Title のタブ): Coin を賭けるパチスロ。賭けは 1 枚(中段のみ)・3 枚(横 3 本)・5 枚(斜めも 5 本)。役は 1 ライン・1 枚あたり、TEN TEN TEN で BIG BONUS(${c.slot.payout.big} 枚 + ${c.slot.bonus.big.games} 回の高確率)、★★★ で REG BONUS(${c.slot.payout.reg} 枚 + ${c.slot.bonus.reg.games} 回)、同じ数字 3 つで数字 × ${c.slot.payout.samePerDigit}、合計 10 で ${c.slot.payout.ten}、足して 10 の Pair + ★ で ${c.slot.payout.pairStar}。払い戻しは賭け枚数を掛け、揃ったうち一番高い 1 本だけ。役は START の時点で決まっていて、リールを止めると押した位置から ${c.slot.pullIn.default} コマ先まで引き込む(合計 10 と Pair + ★ はもっと広い)。範囲の外で押すとこぼす。BONUS の役はこぼしても次の回に持ち越す。予告ランプが光ったら BONUS の役かもしれない(たまにガセ)。<br>
+        <b>SLOT</b>(Title のタブ): Coin を賭けるパチスロ。賭けは好きな枚数(1 枚以上、残高まで)。1〜2 枚は中段のみ、3〜4 枚で横 3 本、5 枚以上で斜めも 5 本。役は 1 ライン・1 枚あたり、TEN TEN TEN で BIG BONUS(${c.slot.payout.big} 枚 + ${c.slot.bonus.big.games} 回の高確率)、★★★ で REG BONUS(${c.slot.payout.reg} 枚 + ${c.slot.bonus.reg.games} 回)、同じ数字 3 つで数字 × ${c.slot.payout.samePerDigit}、合計 10 で ${c.slot.payout.ten}、足して 10 の Pair + ★ で ${c.slot.payout.pairStar}。払い戻しは賭け枚数を掛け、揃ったうち一番高い 1 本だけ。役は START の時点で決まっていて、リールを止めると押した位置から ${c.slot.pullIn.default} コマ先まで引き込む(合計 10 と Pair + ★ はもっと広い)。範囲の外で押すとこぼす。BONUS の役はこぼしても次の回に持ち越す。予告ランプが光ったら BONUS の役かもしれない(たまにガセ)。<br>
+        <b>必殺技</b>(メニューから。Coin を大量に使う): SNIPE SHOT(NORMAL ${fmt(c.skill.normal.snipe)} / CLASSIC ${fmt(c.skill.classic.snipe)} coin)は数字を 2 つタップし、Pair なら位置に関係なく消す(得点と Chain は通常の消去と同じ)。LINE BREAK(${fmt(c.skill.normal.line)} / ${fmt(c.skill.classic.line)} coin)は 1 行を丸ごと消し、Line の得点 × Chain 倍率が入る。残った数字の組み合わせによっては Add が必要になる。Coin を使った Stage(ショップも必殺技も)は Stage ごとの最高得点に数えない。<br>
         <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
@@ -776,6 +837,7 @@ async function boot() {
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
         <div class="ja">MODE: ${game.classic ? 'CLASSIC' : 'NORMAL'}(Title で切り替え) · Coin ${fmt(game.coins)}</div>
+        ${inPlay ? game.skillItems().map((e) => `<button class="btn btn-ghost" data-skill="${e.skill}" ${e.can ? '' : 'disabled'}>${e.skill === 'line' ? 'LINE BREAK' : 'SNIPE SHOT'}<small>　${fmt(e.price)} coin · ${e.skill === 'line' ? '1 行を丸ごと消す' : '位置に関係なく Pair を 1 組消す'}</small></button>`).join('') : ''}
         ${inPlay && game.shopPrices.heart ? `<button class="btn btn-ghost" id="ov-buy-heart" ${game.shopItems().find((e) => e.item === 'heart')?.can ? '' : 'disabled'}>BUY HEART<small>　${fmt(game.shopPrices.heart)} coin · Heart ${game.run.lives}/${CONFIG.lives.max}</small></button>` : ''}
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
@@ -783,10 +845,12 @@ async function boot() {
       </div>`);
     card.querySelector('#ov-back').onclick = () => { game.resume(Date.now()); ui.hideOverlay(); };
     card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showMenu(); };
+    if (game.stage?.skill) handle(game.cancelSkill());
     card.querySelector('#ov-bgm').onclick = () => { bgm.cycle(); showMenu(); };
     card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showMenu; };
     card.querySelector('#ov-title').onclick = showTitle;
     card.querySelector('#ov-buy-heart')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.buy('heart')); });
+    card.querySelectorAll('[data-skill]').forEach((b) => b.addEventListener('click', () => { ui.hideOverlay(); handle(game.armSkill(b.dataset.skill)); }));
     card.querySelector('#ov-giveup')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.giveUp()); });
   }
 

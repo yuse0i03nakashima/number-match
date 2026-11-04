@@ -26,7 +26,7 @@
 //   CLASSIC は本家に近い遊び方: 倍率 ×1 固定、ゲージ・FEVER・Speed・Heart なし、Dead End はすぐ知らせる、
 //   Add は 5 回、Hint は 1 段階だけ。Perfect は Add も Hint も使わないこと。
 
-import { validPairs, removePair, collapseRows, isCleared, matches, connected, rows, numbers } from './rules.js';
+import { validPairs, removePair, collapseRows, isCleared, matches, connected, rows, numbers, rowOf, WIDTH } from './rules.js';
 import { pathInfo, difficultyMult, speedTier } from './scoring.js';
 import { chooseAddition } from './solver.js';
 import { makeQuest, updateQuest } from './quest.js';
@@ -113,8 +113,70 @@ export class Game {
     if (item === 'add') { st.addsLeft += 1; st.addsBought = (st.addsBought ?? 0) + 1; st.addsTotal = (st.addsTotal ?? 0) + 1; }
     if (item === 'heart') this.run.lives += 1;
     st.history.push({ type: 'buy', item, price: entry.price });
+    st.coinUsed = true;
     this.save();
     return [{ type: 'buy', item, price: entry.price, coins: this.coins, addsLeft: st.addsLeft, hintsLeft: st.hintsLeft, lives: this.run.lives }];
+  }
+
+  // ---------- 必殺技(Coin) ----------
+  /** 必殺技の一覧 [{ skill, price, can }]。can は Coin が足りて Stage 中のとき。 */
+  skillItems() {
+    const st = this.stage, p = this.cfg.skill[this.mode] ?? {}, out = [];
+    if (!st || st.status !== 'play') return out;
+    for (const [skill, price] of Object.entries(p)) out.push({ skill, price, can: this.coins >= price });
+    return out;
+  }
+  /** 必殺技を構える。snipe は次の 2 タップ(位置は問わない Pair)、line は次のタップの行。Coin は決まった時点で払う。 */
+  armSkill(skill) {
+    const st = this.stage;
+    const entry = this.skillItems().find((e) => e.skill === skill);
+    if (!entry) return [{ type: 'noShop', item: skill }];
+    if (!entry.can) return [{ type: 'noCoins', item: skill, price: entry.price, coins: this.coins }];
+    st.selected = null;
+    st.skill = { type: skill, price: entry.price };
+    return [{ type: 'skillArmed', skill, price: entry.price }];
+  }
+  cancelSkill() {
+    const st = this.stage;
+    if (!st || !st.skill) return [];
+    st.skill = null; st.selected = null;
+    return [{ type: 'skillCancel' }];
+  }
+  /** 構えた必殺技でのタップ。tap() から呼ばれる。 */
+  tapSkill(pos, now) {
+    const st = this.stage, b = st.board, sk = st.skill;
+    if (b[pos] === 0) return this.cancelSkill();                 // 空マスで取りやめ
+    if (sk.type === 'line') {
+      const r = rowOf(pos);
+      const before = b.slice();
+      for (let p = r * WIDTH; p < Math.min(b.length, (r + 1) * WIDTH); p++) before[p] = 0;
+      const after = collapseRows(before);
+      const mult = this.multiplier, feverMult = st.fever ? this.cfg.fever.pointMult : 1;
+      const points = Math.round(this.cfg.score.rowClear * mult * feverMult);
+      this.coins -= sk.price;
+      st.coinUsed = true;
+      st.skill = null; st.selected = null; st.hintPair = null; st.scope = null;
+      st.stageScore += points; this.run.score += points;
+      st.board = after;
+      st.history.push({ type: 'skill', skill: 'line', board: b, row: r, points, price: sk.price });
+      const events = [{ type: 'skillLine', row: r, points, price: sk.price, coins: this.coins, boardBefore: before, board: after, mult, chain: st.chain, heat: this.heat }];
+      events.push(...this.afterBoardChange());
+      this.save();
+      return events;
+    }
+    // snipe: 1 つ目を選び、2 つ目が Pair なら位置に関係なく消す(通常の消去と同じ得点と Chain)
+    if (sk.first === undefined || sk.first === null) { sk.first = pos; st.selected = pos; return [{ type: 'select', pos }]; }
+    if (sk.first === pos) { sk.first = null; st.selected = null; return [{ type: 'deselect', pos }]; }
+    const i = Math.min(sk.first, pos), j = Math.max(sk.first, pos);
+    if (!matches(b[i], b[j])) { const prev = sk.first; sk.first = pos; st.selected = pos; return [{ type: 'invalid', from: prev, to: pos }, { type: 'select', pos }]; }
+    this.coins -= sk.price;
+    st.coinUsed = true;
+    const price = sk.price;
+    st.skill = null;
+    st.history.push({ type: 'skill', skill: 'snipe', price });
+    const events = this.remove(i, j, now, { skill: 'snipe' });
+    events.unshift({ type: 'skillSnipe', i, j, price, coins: this.coins });
+    return events;
   }
   get stage() { return this.run?.stage ?? null; }
   get stageDef() { return this.run ? this.stages[this.run.stageIndex] : null; }
@@ -266,6 +328,7 @@ export class Game {
     const st = this.stage;
     if (!st || st.status !== 'play') return [];
     const b = st.board;
+    if (st.skill) return this.tapSkill(pos, now);
     if (b[pos] === 0) {
       if (st.selected === null) return [];
       const prev = st.selected; st.selected = null;
@@ -305,7 +368,7 @@ export class Game {
     return [{ type: 'scopeMiss', misses: 2, from: before, chain: st.chain, mult: this.multiplier }, { type: 'scopeEnd', reason: 'miss' }, ...(qb.changed ? [this.questEvent(qb)] : [])];
   }
 
-  remove(i, j, now) {
+  remove(i, j, now, { skill = null } = {}) {
     const st = this.stage, b = st.board, cfg = this.cfg;
     const before = removePair(i, j, b);
     const clearedRows = rows(before).map((r, k) => (r.every((c) => c === 0) ? k : -1)).filter((k) => k >= 0);
@@ -366,14 +429,14 @@ export class Game {
     if (digitsCleared.length && st.firstDigitCleared === null) st.firstDigitCleared = digitsCleared[0];
     const questUpdate = updateQuest(st.quest, { type: 'remove', chain: st.chain, chainBefore, digitsCleared, path: info, otherDigitClearedBefore });
 
-    const labels = [...diff.labels];
+    const labels = skill ? ['SNIPE SHOT'] : [...diff.labels];
     if (scoped) labels.push('SCOPE');
     if (hinted) labels.push('HINTED');
     events.push({
       type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints, digitPoints, digitsCleared,
       chain: st.chain, mult, heat: this.heat, clearedRows, boardBefore: before, board: after,
       path: info, diffMult: diff.mult, pathBonus, labels, speed: speed.tier, speedMult: speed.mult, elapsed, classic: this.classic,
-      fever: !!st.fever, feverExtendMs, feverUntil: st.fever?.until ?? null, hinted, scoped, scopeBroken,
+      fever: !!st.fever, feverExtendMs, feverUntil: st.fever?.until ?? null, hinted, scoped, scopeBroken, skill,
     });
     if (scopeBroken) events.push({ type: 'scopeEnd', reason: 'ignored', chain: st.chain, mult: this.multiplier });
     if (questUpdate.changed) events.push(this.questEvent(questUpdate));
@@ -414,7 +477,7 @@ export class Game {
     st.addsUsed += 1;
     // Dead End からの Add は仕方ないので控えめ(Chain を一部残す)。Pair が残っていたのに押すと途切れる
     st.chain = stuck ? Math.floor(st.chain * cfg.stuck.addKeepRatio) : 0;
-    st.selected = null;
+    st.selected = null; st.skill = null;
     st.hintPair = null; st.scope = null; st.flashUntil = null;
     st.lastRemoveAt = st.chain > 0 ? now : null;
     st.decayed = 0;
@@ -450,7 +513,7 @@ export class Game {
     if (!st || st.status !== 'play') return [];
     const tier = this.hintTier;
     const pairs = validPairs(st.board);
-    st.selected = null;
+    st.selected = null; st.skill = null;
 
     if (pairs.length === 0 && this.classic) {
       // CLASSIC: Dead End は知らせてあるので、罰も使用回数の消費も無い
@@ -571,7 +634,7 @@ export class Game {
     this.progress.bestScore = Math.max(this.progress.bestScore, this.run.score);
     // Stage ごとの最高得点(腕前の指標。Coin やショップでは変わらない)
     const prevBest = this.progress.stageBest?.[def.stage] ?? 0;
-    const stageBestUpdated = st.stageScore > prevBest;
+    const stageBestUpdated = !st.coinUsed && st.stageScore > prevBest;   // Coin(ショップ・必殺技)を使った Stage は腕前の記録に数えない
     if (!this.progress.stageBest) this.progress.stageBest = {};
     if (stageBestUpdated) this.progress.stageBest[def.stage] = st.stageScore;
     // Coin: Stage の得点がそのまま貯まる
@@ -580,7 +643,7 @@ export class Game {
     this.save();
     return [{
       type: 'stageClear', stage: def.stage, stars, rank, perfect, clearBonus, perfectBonus, savedBonus, hintBonus, lifeGain,
-      stageBest: Math.max(prevBest, st.stageScore), stageBestUpdated, prevBest, coinsGained, coins: this.coins,
+      stageBest: stageBestUpdated ? st.stageScore : prevBest, stageBestUpdated, prevBest, coinsGained, coins: this.coins, coinUsed: !!st.coinUsed,
       stageScore: st.stageScore, playScore: st.stageScore - bonusTotal, score: this.run.score,
       addsUsed: st.addsUsed, addsLeft: st.addsLeft, hintsLeft: st.hintsLeft, addsSaved, hintsSaved,
       isLast: this.run.stageIndex + 1 >= this.stages.length,

@@ -163,6 +163,11 @@ export class Sound {
     notes.forEach((k, n) => this.tone(noteFreq(base + k), { type: 'triangle', dur: 0.3 + level * 0.1, gain: 0.3, when: n * 0.05 }));
     if (level >= 1) this.noise({ dur: 0.3, gain: 0.12, from: 400, to: 3000 });
   }
+  slotReach(big = false) {
+    [0, 2, 4, 5, 7].forEach((k, n) => this.tone(noteFreq(k + (big ? 14 : 7)), { type: big ? 'square' : 'triangle', dur: 0.14, gain: big ? 0.2 : 0.22, when: n * 0.07, lowpass: 2600 }));
+    if (big) this.noise({ dur: 0.5, gain: 0.1, from: 200, to: 2400 });
+  }
+  coin(k = 0) { this.tone(noteFreq(14 + (k % 5)), { type: 'sine', dur: 0.07, gain: 0.18 }); }
   slotBonus() {
     [0, 4, 7, 12, 7, 12, 16, 19, 24].forEach((k, n) => this.tone(noteFreq(k + 7), { type: 'triangle', dur: 0.35, gain: 0.34, when: n * 0.11 }));
     this.noise({ dur: 0.6, gain: 0.16, from: 300, to: 3500 });
