@@ -110,6 +110,11 @@ export const CONFIG = {
     fxScale: 0.5,            // 粒子の量の倍率。揺れ・ヒットストップ・画面の点滅は無し
     feverCalm: true,
   },
+  // Coin: THE TEN で Stage を Clear すると、その Stage の得点がそのまま貯まる(Best Score とは別の累計)。ショップとスロットで使う
+  shop: {
+    normal:  { hint: 5000,  add: 10000, heart: 20000 },
+    classic: { hint: 1500,  add: 3000 },                   // CLASSIC に Heart は無い
+  },
   audio: {
     masterVolume: 0.35,
   },

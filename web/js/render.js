@@ -147,7 +147,7 @@ export class Renderer {
     this.renderGauge(game, now);
     this.renderFever(game, now);
     this.renderLives(run.lives, game.cfg.lives.max);
-    this.renderAddButton(st.addsLeft, st.addsTotal ?? def.adds);
+    this.renderAddButton(st.addsLeft, st.addsTotal ?? def.adds, game);
     this.renderHintButton(game);
   }
 
@@ -159,8 +159,19 @@ export class Renderer {
     btn.classList.add(`tier-${tier}`);
     label.textContent = tier.toUpperCase();
     if (game.inFever) { sub.textContent = `FEVER 時間 −${game.cfg.fever.hintTimeCostMs / 1000} 秒`; btn.disabled = false; return; }
+    const shop = game.shopItems().find((e) => e.item === 'hint');
+    if (st.hintsLeft <= 0 && shop && shop.can) {
+      // Hint が尽きたら、Coin があれば BUY HINT に変わる
+      label.textContent = 'BUY HINT';
+      sub.textContent = `${shop.price.toLocaleString('en-US')} coin`;
+      btn.classList.add('buy');
+      btn.disabled = false;
+      return;
+    }
+    btn.classList.remove('buy');
+    const total = Math.max(game.cfg.hint.perStage, st.hintsLeft);
     const dots = [];
-    for (let k = 0; k < game.cfg.hint.perStage; k++) dots.push(`<span class="dot${k < st.hintsLeft ? '' : ' off'}"></span>`);
+    for (let k = 0; k < total; k++) dots.push(`<span class="dot${k < st.hintsLeft ? '' : ' off'}"></span>`);
     sub.innerHTML = `<span class="stock">${dots.join('')}</span>`;
     btn.disabled = st.hintsLeft <= 0;
   }
@@ -207,15 +218,21 @@ export class Renderer {
     box.innerHTML = hearts.join('');
   }
 
-  // ADD ボタン。Add が尽きたら GIVE UP に変わる
-  renderAddButton(left, total) {
+  // ADD ボタン。Add が尽きたら、Coin があれば BUY ADD、無ければ GIVE UP に変わる(GIVE UP はメニューからもできる)
+  renderAddButton(left, total, game = null) {
     const btn = this.$('btn-add');
     const label = this.$('btn-add-label');
     const sub = this.$('add-stock');
-    if (left <= 0) {
+    const shop = game ? game.shopItems().find((e) => e.item === 'add') : null;
+    btn.classList.remove('buy');
+    if (left <= 0 && shop && shop.can) {
+      btn.classList.remove('ctl-danger'); btn.classList.add('ctl-primary', 'buy');
+      label.textContent = 'BUY ADD';
+      sub.textContent = `${shop.price.toLocaleString('en-US')} coin · GIVE UP はメニュー`;
+    } else if (left <= 0) {
       btn.classList.remove('ctl-primary'); btn.classList.add('ctl-danger');
       label.textContent = 'GIVE UP';
-      sub.textContent = 'Heart −1 · 得点は半分残る';
+      sub.textContent = game && game.classic ? '得点は半分残る' : 'Heart −1 · 得点は半分残る';
     } else {
       btn.classList.add('ctl-primary'); btn.classList.remove('ctl-danger');
       label.textContent = '＋ ADD';

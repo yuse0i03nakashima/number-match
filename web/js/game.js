@@ -35,7 +35,7 @@ const RANKS = ['C', 'B', 'A', 'S'];
 const rankIndex = (r) => RANKS.indexOf(r);
 
 export const MODES = ['normal', 'classic'];
-const emptyProgress = () => ({ maxStage: 0, stars: {}, ranks: {}, attempts: {}, bestScore: 0, runs: 0, quests: {} });
+const emptyProgress = () => ({ maxStage: 0, stars: {}, ranks: {}, attempts: {}, bestScore: 0, runs: 0, quests: {}, stageBest: {} });
 
 export class Game {
   constructor(stages, config, storage = globalThis.localStorage) {
@@ -45,6 +45,8 @@ export class Game {
     this.mode = 'normal';
     // モードごとの枠: 記録(progress)と進行中の Run(無ければ null)
     this.slots = Object.fromEntries(MODES.map((m) => [m, { progress: emptyProgress(), run: null }]));
+    this.coins = 0;          // Coin(モード共通。ショップとスロットで使う)
+    this.slotStats = {};     // スロットの記録(slot.js が使う。ここでは保存するだけ)
     this.load();
   }
 
@@ -61,6 +63,8 @@ export class Game {
           this.slots[m].run = data.slots[m].run ?? null;
         }
         if (MODES.includes(data.mode)) this.mode = data.mode;
+        this.coins = Math.max(0, Math.floor(data.coins ?? 0));
+        this.slotStats = data.slotStats ?? {};
       } else {
         // 旧形式(モードが無いころの保存)は NORMAL の記録として読む。relax の印は捨てる
         if (data.progress) { const { relax, ...p } = data.progress; this.slots.normal.progress = { ...emptyProgress(), ...p }; }
@@ -70,7 +74,7 @@ export class Game {
   }
   save() {
     try {
-      this.storage?.setItem(this.cfg.storageKey, JSON.stringify({ mode: this.mode, slots: this.slots }));
+      this.storage?.setItem(this.cfg.storageKey, JSON.stringify({ mode: this.mode, slots: this.slots, coins: this.coins, slotStats: this.slotStats }));
     } catch { /* 保存できない環境では無視 */ }
   }
 
@@ -82,6 +86,36 @@ export class Game {
   get classic() { return this.mode === 'classic'; }
   /** モードを切り替える(Title から)。各モードの記録と Run はそのまま残る。 */
   setMode(mode) { if (MODES.includes(mode)) { this.mode = mode; this.save(); } }
+  /** Coin を足す(負の値で引く)。残高は 0 未満にならない。 */
+  addCoins(n) { this.coins = Math.max(0, Math.floor(this.coins + n)); this.save(); return this.coins; }
+  /** ショップの品物と値段(いまのモード)。 */
+  get shopPrices() { return this.cfg.shop[this.mode] ?? {}; }
+  /** いま買える品物の一覧 [{ item, price, can }]。can は Coin が足りて、かつ買う意味がある(残り 0 など)とき。 */
+  shopItems() {
+    const st = this.stage, p = this.shopPrices, out = [];
+    if (!st || st.status !== 'play') return out;
+    if (p.hint) out.push({ item: 'hint', price: p.hint, can: this.coins >= p.hint && st.hintsLeft <= 0 && !st.fever });
+    if (p.add) out.push({ item: 'add', price: p.add, can: this.coins >= p.add && st.addsLeft <= 0 });
+    if (p.heart) out.push({ item: 'heart', price: p.heart, can: this.coins >= p.heart && this.run.lives < this.cfg.lives.max });
+    return out;
+  }
+  /**
+   * ショップで買う。買った Add・Hint は温存 Bonus と投資に数えない(addsBought / hintsBought)。
+   * 買った Add を使えば Perfect は失い、買った Hint を使えば Quest「Hint を使わずに Clear」は失敗になる(通常の Add / Hint と同じ扱い)。
+   */
+  buy(item) {
+    const st = this.stage;
+    const entry = this.shopItems().find((e) => e.item === item);
+    if (!entry) return [{ type: 'noShop', item }];
+    if (!entry.can) return [{ type: 'noCoins', item, price: entry.price, coins: this.coins }];
+    this.coins -= entry.price;
+    if (item === 'hint') { st.hintsLeft += 1; st.hintsBought = (st.hintsBought ?? 0) + 1; }
+    if (item === 'add') { st.addsLeft += 1; st.addsBought = (st.addsBought ?? 0) + 1; st.addsTotal = (st.addsTotal ?? 0) + 1; }
+    if (item === 'heart') this.run.lives += 1;
+    st.history.push({ type: 'buy', item, price: entry.price });
+    this.save();
+    return [{ type: 'buy', item, price: entry.price, coins: this.coins, addsLeft: st.addsLeft, hintsLeft: st.hintsLeft, lives: this.run.lives }];
+  }
   get stage() { return this.run?.stage ?? null; }
   get stageDef() { return this.run ? this.stages[this.run.stageIndex] : null; }
   multiplierFor(chain) {
@@ -494,14 +528,17 @@ export class Game {
     const stars = perfect ? 3 : st.addsUsed <= 1 ? 2 : 1;
     const clearBonus = cfg.score.stageClear;
     const perfectBonus = perfect ? cfg.score.perfect : 0;
-    const savedBonus = st.addsLeft * cfg.score.addSaved;
-    const hintBonus = st.hintsLeft * cfg.score.hintSaved;
+    // 温存: 買った分は数えない
+    const addsSaved = Math.max(0, st.addsLeft - (st.addsBought ?? 0));
+    const hintsSaved = Math.max(0, st.hintsLeft - (st.hintsBought ?? 0));
+    const savedBonus = addsSaved * cfg.score.addSaved;
+    const hintBonus = hintsSaved * cfg.score.hintSaved;
     // お題: noHint は Clear で達成が決まる
     updateQuest(st.quest, { type: 'clear' });
     const questBonus = st.quest && st.quest.done ? cfg.quest.bonus : 0;
     if (st.quest && st.quest.done) this.progress.quests = { ...(this.progress.quests ?? {}), [def.stage]: true };
     // 温存の投資: この World で残した Add を数え、World の終わりで次の World の開始 Chain と Heart に変える
-    this.run.savedAdds = (this.run.savedAdds ?? 0) + st.addsLeft;
+    this.run.savedAdds = (this.run.savedAdds ?? 0) + addsSaved;
     const worldEnd = (this.run.stageIndex + 1) % cfg.worldSize === 0;
     let investChain = 0, investHearts = 0, investAdds = 0;
     if (worldEnd && this.classic) {
@@ -532,11 +569,20 @@ export class Game {
     if (!prevRank || rankIndex(rank) > rankIndex(prevRank)) this.progress.ranks[def.stage] = rank;
     this.progress.maxStage = Math.max(this.progress.maxStage, this.run.stageIndex + 1);
     this.progress.bestScore = Math.max(this.progress.bestScore, this.run.score);
+    // Stage ごとの最高得点(腕前の指標。Coin やショップでは変わらない)
+    const prevBest = this.progress.stageBest?.[def.stage] ?? 0;
+    const stageBestUpdated = st.stageScore > prevBest;
+    if (!this.progress.stageBest) this.progress.stageBest = {};
+    if (stageBestUpdated) this.progress.stageBest[def.stage] = st.stageScore;
+    // Coin: Stage の得点がそのまま貯まる
+    const coinsGained = st.stageScore;
+    this.coins += coinsGained;
     this.save();
     return [{
       type: 'stageClear', stage: def.stage, stars, rank, perfect, clearBonus, perfectBonus, savedBonus, hintBonus, lifeGain,
+      stageBest: Math.max(prevBest, st.stageScore), stageBestUpdated, prevBest, coinsGained, coins: this.coins,
       stageScore: st.stageScore, playScore: st.stageScore - bonusTotal, score: this.run.score,
-      addsUsed: st.addsUsed, addsLeft: st.addsLeft, hintsLeft: st.hintsLeft,
+      addsUsed: st.addsUsed, addsLeft: st.addsLeft, hintsLeft: st.hintsLeft, addsSaved, hintsSaved,
       isLast: this.run.stageIndex + 1 >= this.stages.length,
       worldEnd,   // World の終わりなら Result の画面
       chain: st.chain, mult: this.multiplier, fever: !!st.fever,
