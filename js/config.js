@@ -115,15 +115,23 @@ export const CONFIG = {
     normal:  { hint: 5000,  add: 10000, heart: 20000 },
     classic: { hint: 1500,  add: 3000 },                   // CLASSIC に Heart は無い
   },
+  // 必殺技(Stage 中に大量の Coin で使う)。snipe: 位置に関係なく Pair を 1 組消す。line: 1 行を丸ごと消す
+  // 使った Stage は Stage ごとの最高得点に数えない(ショップで買った Stage も同じ)
+  skill: {
+    normal:  { snipe: 5000, line: 20000 },
+    classic: { snipe: 1500, line: 6000 },
+  },
   // スロット(SLOT タブ。Coin を賭けて Coin を得る別ゲーム)。確率は 1 回転ごと。払い戻し率の目安は 90%(simulate で測る)
   slot: {
-    bets: [1, 3, 5],         // 賭け枚数(1: 中段だけ、3: 横 3 本、5: 斜めも入れて 5 本)
+    bets: [5, 10, 25, 50, 100, 250, 500, 1000],       // BET の選択肢。任意の枚数も入力できる(1 枚以上、残高まで)
+    defaultBet: 10,
+    linesFor: (bet) => (bet >= 5 ? 5 : bet >= 3 ? 3 : 1),   // 賭け枚数 → 有効ライン(1: 中段、3: 横 3 本、5: 斜めも)
     pullIn: { default: 4, ten: 10, pairStar: 10 },   // 引き込み: 押した位置から何コマ先まで寄せるか。小役は広く、BONUS と同じ数字は目押しが要る
-    payout: { big: 40, reg: 15, samePerDigit: 2, ten: 8, pairStar: 3 },   // 1 ライン・1 枚あたりの枚数(賭け枚数を掛ける)
-    table: { big: 1 / 800, reg: 1 / 450, same: 1 / 150, ten: 1 / 30, pairStar: 1 / 30 },   // 通常時の役の確率。BONUS の役は揃えるまで持ち越す
+    payout: { big: 30, reg: 12, samePerDigit: 2, ten: 6, pairStar: 2 },   // 1 ライン・1 枚あたりの枚数(賭け枚数を掛ける)
+    table: { big: 1 / 550, reg: 1 / 300, same: 1 / 90, ten: 1 / 18, pairStar: 1 / 18 },   // 通常時の役の確率。BONUS の役は揃えるまで持ち越す
     bonus: {
-      big: { games: 30, table: { same: 1 / 8, ten: 1 / 1.6, pairStar: 1 / 5 } },
-      reg: { games: 15, table: { same: 1 / 20, ten: 1 / 2, pairStar: 1 / 4 } },
+      big: { games: 30, table: { same: 1 / 12, ten: 1 / 2.5, pairStar: 1 / 5 } },
+      reg: { games: 15, table: { same: 1 / 25, ten: 1 / 3, pairStar: 1 / 5 } },
     },
     notice: { onBonus: 0.7, fake: 0.03 },   // 予告ランプ: BONUS の役のとき光る確率と、ガセで光る確率
     spinStepMs: 45,          // リールが 1 コマ進む時間

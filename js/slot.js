@@ -130,19 +130,34 @@ export class Slot {
     this.cfg = cfg;
     this.rng = rng;
     this.strips = strips;
-    this.bet = cfg.bets[cfg.bets.length - 1];
+    this.bet = cfg.defaultBet ?? cfg.bets[0];
     this.bonus = null;            // { kind: 'big' | 'reg', left: 残り回数 }
     this.flag = null;             // この回の役
     this.positions = [null, null, null];
     this.spinning = false;
     this.lastResult = null;
-    this.stats = { spins: 0, totalBet: 0, totalWin: 0, bestWin: 0, bigs: 0, regs: 0 };
+    this.stats = { spins: 0, totalBet: 0, totalWin: 0, bestWin: 0, bigs: 0, regs: 0, hits: 0 };
   }
 
-  get lines() { return LINES_FOR_BET[this.bet] ?? 1; }
+  get lines() { return this.cfg.linesFor ? this.cfg.linesFor(this.bet) : (LINES_FOR_BET[this.bet] ?? 1); }
   get allStopped() { return this.positions.every((p) => p !== null); }
 
-  setBet(b) { if (!this.spinning && this.cfg.bets.includes(b)) this.bet = b; }
+  /** 賭け枚数(1 以上の整数なら何枚でも)。 */
+  setBet(b) { b = Math.floor(Number(b)); if (!this.spinning && Number.isFinite(b) && b >= 1) this.bet = b; }
+
+  /** いま止まっているリールから、まだ揃う見込みのある大きな役(リーチ)。['big' | 'reg' | 'same'] */
+  reach() {
+    const stopped = this.positions.filter((p) => p !== null).length;
+    if (stopped < 2 || this.allStopped) return [];
+    const out = new Set();
+    const windows = this.positions.map((p, k) => (p === null ? null : windowAt(this.strips[k], p)));
+    for (let L = 0; L < this.lines; L++) {
+      const syms = LINES[L].map((row, k) => (windows[k] ? windows[k][row] : null)).filter((s) => s !== null);
+      if (syms.length < 2 || syms[0] !== syms[1]) continue;
+      if (syms[0] === 'T') out.add('big'); else if (syms[0] === 'S') out.add('reg'); else out.add('same');
+    }
+    return [...out];
+  }
 
   /** 役の抽選。いまの状態(通常 / BONUS 中)の確率表から 1 つ選ぶ。 */
   drawFlag() {
@@ -234,6 +249,7 @@ export class Slot {
     const events = [];
     this.stats.totalWin += win;
     this.stats.bestWin = Math.max(this.stats.bestWin, win);
+    if (win > 0) this.stats.hits = (this.stats.hits ?? 0) + 1;
     // BONUS の開始・進行・終了
     let bonusStart = null, bonusEnd = null;
     if (this.bonus) {
@@ -257,7 +273,7 @@ export class Slot {
     if (!data) return;
     if (data.stats) this.stats = { ...this.stats, ...data.stats };
     if (data.bonus) this.bonus = data.bonus;
-    if (this.cfg.bets.includes(data.bet)) this.bet = data.bet;
+    if (Number.isFinite(data.bet) && data.bet >= 1) this.bet = Math.floor(data.bet);
   }
 }
 

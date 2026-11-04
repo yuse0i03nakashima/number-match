@@ -80,6 +80,15 @@ test('simulate: 払い戻し率はおおむね 0.8〜1.0(目押しなし・完�
   }
 });
 
+test('Slot: 賭け枚数は任意で、有効ラインは枚数で決まる', () => {
+  const slot = new Slot(CONFIG.slot, lcg(3));
+  slot.setBet(1); assert.equal(slot.lines, 1);
+  slot.setBet(4); assert.equal(slot.lines, 3);
+  slot.setBet(777); assert.equal(slot.lines, 5); assert.equal(slot.bet, 777);
+  slot.setBet(0); assert.equal(slot.bet, 777);               // 1 未満は無視
+  assert.equal(slot.start(500).ok, false);                   // 残高不足
+});
+
 test('Slot: toJSON / restore で記録と BONUS が戻る', () => {
   const slot = new Slot(CONFIG.slot, lcg(1));
   slot.stats.spins = 12; slot.stats.bigs = 1; slot.bonus = { kind: 'reg', left: 5 }; slot.setBet(3);
