@@ -153,6 +153,21 @@ export class Sound {
     [6, 4, 1, 0].forEach((k, n) => this.tone(noteFreq(k) * 0.944, { type: 'triangle', dur: 0.9, gain: 0.35, when: n * 0.25, lowpass: 1200 }));
   }
 
+  // ---------- スロット ----------
+  slotStart() { this.noise({ dur: 0.18, gain: 0.14, from: 200, to: 1800 }); this.tone(noteFreq(0), { type: 'square', dur: 0.08, gain: 0.12, lowpass: 1800 }); }
+  slotStop() { this.tone(noteFreq(7), { type: 'square', dur: 0.06, gain: 0.16, lowpass: 2200 }); this.noise({ dur: 0.05, gain: 0.08, from: 1200, to: 600 }); }
+  slotLamp() { [0, 4, 7].forEach((k, n) => this.tone(noteFreq(k + 14), { type: 'sine', dur: 0.12, gain: 0.22, when: n * 0.06 })); }
+  slotWin(level = 0) {
+    const base = 7 + level * 3;
+    const notes = level === 2 ? [0, 4, 7, 12, 16, 19] : level === 1 ? [0, 4, 7, 12] : [0, 7];
+    notes.forEach((k, n) => this.tone(noteFreq(base + k), { type: 'triangle', dur: 0.3 + level * 0.1, gain: 0.3, when: n * 0.05 }));
+    if (level >= 1) this.noise({ dur: 0.3, gain: 0.12, from: 400, to: 3000 });
+  }
+  slotBonus() {
+    [0, 4, 7, 12, 7, 12, 16, 19, 24].forEach((k, n) => this.tone(noteFreq(k + 7), { type: 'triangle', dur: 0.35, gain: 0.34, when: n * 0.11 }));
+    this.noise({ dur: 0.6, gain: 0.16, from: 300, to: 3500 });
+  }
+
   lifeGain() { [9, 12, 14].forEach((k, n) => this.tone(noteFreq(k), { type: 'sine', dur: 0.35, gain: 0.3, when: n * 0.08 })); }
 
   stuck() { this.tone(noteFreq(3), { type: 'sine', dur: 0.25, gain: 0.2 }); this.tone(noteFreq(1), { type: 'sine', dur: 0.35, gain: 0.2, when: 0.15 }); }

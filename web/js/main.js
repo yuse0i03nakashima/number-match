@@ -9,6 +9,8 @@ import { FX, heatColor, PALETTE } from './fx.js';
 import { Sound, vibrate } from './audio.js';
 import { Music } from './music.js';
 import { analyzeStage } from './review.js';
+import { Slot } from './slot.js';
+import { SlotView } from './slotview.js';
 import { WIDTH, validPairs } from './rules.js';
 
 const fmt = (n) => n.toLocaleString('en-US');
@@ -43,6 +45,45 @@ async function boot() {
     },
     get label() { return this.mode === 'synth' ? 'ON' : 'OFF'; },
   };
+  // スロット(SLOT タブ)。判断は slot.js、画面は slotview.js。Coin は game が持つ
+  const slot = new Slot(CONFIG.slot);
+  slot.restore(game.slotStats);
+  const slotEl = document.getElementById('slot');
+  let slotActive = false;
+  let titleTab = (() => { try { return localStorage.getItem('numbermatch.tab') || game.mode; } catch { return game.mode; } })();
+  const slotView = new SlotView(slotEl, { slot, game, fx, sound, vibrate, onMenu: () => showSlotMenu() });
+  function showSlot() {
+    ensureAudio();
+    ui.hideOverlay();
+    slotActive = true; titleShown = false;
+    app.hidden = true;
+    fx.setCalm(false); document.body.classList.remove('classic');
+    slotView.enter();
+  }
+  function leaveSlot() {
+    slotView.leave();
+    slotActive = false;
+    app.hidden = false;
+    applyMode();
+  }
+  function showSlotMenu() {
+    if (slot.spinning) return;
+    const card = ui.showOverlay(`
+      <div class="eyebrow">slot</div>
+      <h1>Pause</h1>
+      <div class="ja">Coin ${fmt(game.coins)} · 払い戻し率の目安は約 90%。BONUS の役は揃えるまで持ち越す。</div>
+      <div class="actions">
+        <button class="btn btn-primary" id="ov-back">Resume</button>
+        <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
+        <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
+        <button class="btn btn-ghost" id="ov-title">Title へ</button>
+      </div>`);
+    card.querySelector('#ov-back').onclick = () => ui.hideOverlay();
+    card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showSlotMenu(); };
+    card.querySelector('#ov-bgm').onclick = () => { bgm.cycle(); showSlotMenu(); };
+    card.querySelector('#ov-title').onclick = () => { leaveSlot(); showTitle(); };
+  }
+
   // モード(NORMAL / CLASSIC)を画面・音・演出に反映する。CLASSIC は BGM を静かに、揺れと点滅を止め、粒子を減らす
   let fxScale = 1;
   function applyMode() {
@@ -85,6 +126,7 @@ async function boot() {
   // Chain ゲージと FEVER は時間で動くので、定期的に進めて HUD を描き直す
   setInterval(() => {
     // BGM: Stage 中は Chain の熱と FEVER に合わせ、Title では止める。オーバーレイ中は小さく
+    if (slotActive) { bgm.setHeat(slot.bonus ? 0.85 : 0.3); bgm.setFever(!!slot.bonus); bgm.play(); bgm.duck(overlayOpen()); if (slot.bonus && !overlayOpen()) fx.embers(4); return; }
     if (game.stage?.status === 'play' || game.stage?.status === 'clear') { bgm.setHeat(game.heat); bgm.setFever(game.inFever); bgm.play(); }
     else if (titleShown) bgm.stop();
     bgm.duck(overlayOpen());
@@ -574,6 +616,9 @@ async function boot() {
   // ---------- Title・Menu ----------
   function showTitle() {
     busy = false; titleShown = true;
+    if (slotActive) leaveSlot();
+    try { localStorage.setItem('numbermatch.tab', titleTab); } catch { /* 無視 */ }
+    if (titleTab === 'slot') { showSlotTitle(); return; }
     const canResume = game.run && game.stage && (game.stage.status === 'play' || game.stage.status === 'clear' || game.stage.status === 'failed');
     const worlds = [];
     const total = Math.ceil(stages.length / CONFIG.worldSize);
@@ -589,10 +634,7 @@ async function boot() {
       <div class="eyebrow">number match</div>
       <h1 class="big">THE TEN</h1>
       <div class="ja">同じ数字か、足して 10 になる 2 つの数字の Pair をタップで選んで消していこう！Board の数字を全部消せば Stage Clear！！</div>
-      <div class="mode-tabs" role="tablist">
-        <button class="mode-tab ${game.classic ? '' : 'on'}" data-mode="normal" role="tab">NORMAL</button>
-        <button class="mode-tab ${game.classic ? 'on' : ''}" data-mode="classic" role="tab">CLASSIC</button>
-      </div>
+      ${modeTabs()}
       <div class="ja mode-desc">${game.classic
         ? '本家に近い遊び方。倍率・制限時間・Heart は無く、得点は定額。Add は 5 回で、残すほど Bonus。Dead End はすぐ知らせる。'
         : 'Chain 倍率と FEVER で高得点を狙う遊び方。Chain は時間で減り、Heart が尽きると Run 終了。'}</div>
@@ -611,10 +653,7 @@ async function boot() {
       </div>
       <div class="meta">rules verified</div>`);
     card.querySelector('#ov-records').onclick = showRecords;
-    card.querySelectorAll('.mode-tab').forEach((b) => b.addEventListener('click', () => {
-      if (b.dataset.mode === game.mode) return;
-      game.setMode(b.dataset.mode); applyMode(); showTitle();
-    }));
+    bindTabs(card);
     card.querySelector('#ov-resume')?.addEventListener('click', () => {
       ensureAudio();
       const st = game.stage;
@@ -627,6 +666,48 @@ async function boot() {
     card.querySelectorAll('[data-world]').forEach((b) => b.addEventListener('click', () => {
       ensureAudio(); handle(game.newRun(Number(b.dataset.world) * CONFIG.worldSize));
     }));
+    card.querySelector('#ov-rules').onclick = showRules;
+  }
+
+  // Title のタブ(NORMAL / CLASSIC / SLOT)
+  function modeTabs() {
+    const on = (t) => (titleTab === t ? 'on' : '');
+    return `<div class="mode-tabs" role="tablist">
+        <button class="mode-tab ${on('normal')}" data-tab="normal" role="tab">NORMAL</button>
+        <button class="mode-tab ${on('classic')}" data-tab="classic" role="tab">CLASSIC</button>
+        <button class="mode-tab ${on('slot')}" data-tab="slot" role="tab">SLOT</button>
+      </div>`;
+  }
+  function bindTabs(card) {
+    card.querySelectorAll('.mode-tab').forEach((b) => b.addEventListener('click', () => {
+      const t = b.dataset.tab;
+      if (t === titleTab) return;
+      titleTab = t;
+      if (t !== 'slot') { game.setMode(t); applyMode(); }
+      showTitle();
+    }));
+  }
+  function showSlotTitle() {
+    const s = slot.stats;
+    const card = ui.showOverlay(`
+      <div class="eyebrow">number match</div>
+      <h1 class="big">THE TEN</h1>
+      <div class="ja">同じ数字か、足して 10 になる 2 つの数字の Pair をタップで選んで消していこう！Board の数字を全部消せば Stage Clear！！</div>
+      ${modeTabs()}
+      <div class="ja mode-desc">THE TEN で貯めた Coin を賭けるパチスロ。リールは自分で止める(目押し)。合計 10 の役と TEN TEN TEN の BIG BONUS。</div>
+      <div class="rows">
+        <div class="row"><span class="k">Coin</span><span class="v">${fmt(game.coins)}</span></div>
+        <div class="row"><span class="k">最高の払い戻し</span><span class="v">${fmt(s.bestWin)}</span></div>
+        <div class="row"><span class="k">回転 / BIG / REG</span><span class="v">${fmt(s.spins)} / ${s.bigs} / ${s.regs}</span></div>
+        <div class="row"><span class="k">払い戻し率(これまで)</span><span class="v">${s.totalBet ? Math.round((s.totalWin / s.totalBet) * 100) + '%' : '·'}</span></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="ov-play">${slot.bonus ? `PLAY(${slot.bonus.kind === 'big' ? 'BIG' : 'REG'} BONUS 継続中)` : 'PLAY'}</button>
+        <button class="btn btn-ghost" id="ov-rules">How to Play</button>
+      </div>
+      <div class="meta">${game.coins < CONFIG.slot.bets[0] ? 'Coin が無い。THE TEN で Stage を Clear すると貯まる' : 'payout ≈ 90%'}</div>`);
+    bindTabs(card);
+    card.querySelector('#ov-play').onclick = showSlot;
     card.querySelector('#ov-rules').onclick = showRules;
   }
 
@@ -678,6 +759,7 @@ async function boot() {
         <b>Quest</b>: Stage ごとに 1 つお題が出る(「3 を最初に消し切れ」「Add なしで 7 Chain」「斜めで 2 回消せ」「Hint を使わずに Clear」)。達成で +${c.quest.bonus}。どのお題も、その Board で達成できることを確かめてから出している。<br>
         <b>温存の投資</b>: World(5 Stage)で残した Add の回数が、次の World の開始 Chain(1 回ごとに +${c.invest.chainPerAdd}、上限 +${c.invest.chainCap})と Heart(${c.invest.addsPerHeart} 回ごとに +1)になる。<br>
         <b>Coin とショップ</b>: Stage を Clear すると、その Stage の得点がそのまま Coin として貯まる(Best Score とは別の累計。スロットでも使う)。Hint が尽きると HINT ボタンが BUY HINT(NORMAL ${fmt(c.shop.normal.hint)} / CLASSIC ${fmt(c.shop.classic.hint)} coin)、Add が尽きると ADD ボタンが BUY ADD(${fmt(c.shop.normal.add)} / ${fmt(c.shop.classic.add)} coin)に変わる。Heart はメニューから ${fmt(c.shop.normal.heart)} coin(NORMAL だけ)。買った Add・Hint は温存 Bonus と投資に数えない。買った Add を使えば Perfect は失う。<br>
+        <b>SLOT</b>(Title のタブ): Coin を賭けるパチスロ。賭けは 1 枚(中段のみ)・3 枚(横 3 本)・5 枚(斜めも 5 本)。役は 1 ライン・1 枚あたり、TEN TEN TEN で BIG BONUS(${c.slot.payout.big} 枚 + ${c.slot.bonus.big.games} 回の高確率)、★★★ で REG BONUS(${c.slot.payout.reg} 枚 + ${c.slot.bonus.reg.games} 回)、同じ数字 3 つで数字 × ${c.slot.payout.samePerDigit}、合計 10 で ${c.slot.payout.ten}、足して 10 の Pair + ★ で ${c.slot.payout.pairStar}。払い戻しは賭け枚数を掛け、揃ったうち一番高い 1 本だけ。役は START の時点で決まっていて、リールを止めると押した位置から ${c.slot.pullIn.default} コマ先まで引き込む(合計 10 と Pair + ★ はもっと広い)。範囲の外で押すとこぼす。BONUS の役はこぼしても次の回に持ち越す。予告ランプが光ったら BONUS の役かもしれない(たまにガセ)。<br>
         <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
@@ -711,7 +793,7 @@ async function boot() {
   // ---------- 入力 ----------
   ui.board.addEventListener('pointerdown', (e) => {
     const el = e.target.closest('.cell');
-    if (!el || busy || overlayOpen()) return;
+    if (!el || busy || overlayOpen() || slotActive) return;
     ensureAudio();
     handle(game.tap(Number(el.dataset.pos), Date.now()));
   });
