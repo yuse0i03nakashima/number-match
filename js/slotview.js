@@ -77,7 +77,7 @@ export class SlotView {
         const c = r.cells[i];
         if (c.dataset.sym !== sym) { c.dataset.sym = sym; c.textContent = SYMBOL_TEXT[sym] ?? sym; c.classList.toggle('t', sym === 'T'); c.classList.toggle('s', sym === 'S'); }
       }
-      const cellH = r.strip.clientHeight / 3 || 64;
+      const cellH = r.el.clientHeight / 3 || 64;        // リールの枠はちょうど 3 コマ分の高さ
       const bounce = r.bounce > 0 ? Math.sin(r.bounce * Math.PI) * 6 : 0;
       r.strip.style.transform = `translateY(${(-cellH) + frac * -cellH + bounce}px)`;
       r.el.classList.toggle('spinning', r.state !== 'stopped');
