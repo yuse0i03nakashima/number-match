@@ -143,6 +143,16 @@ async function boot() {
           break;
         }
         case 'noAdds': ui.toast('Add はもう使えない'); sound.invalid(); break;
+        case 'buy': {
+          const name = { hint: 'Hint', add: 'Add', heart: 'Heart' }[ev.item];
+          sound.lifeGain(); vibrate([20, 30, 20]);
+          ui.toast(`${name} を購入 −${fmt(ev.price)} coin(残り ${fmt(ev.coins)})`, 2200);
+          if (ev.item === 'heart') ui.renderLives(ev.lives, CONFIG.lives.max, { gained: true });
+          ui.renderHud(game);
+          break;
+        }
+        case 'noCoins': ui.toast(`Coin が足りない(${fmt(ev.price)} 必要、残り ${fmt(ev.coins)})`, 2200); sound.invalid(); break;
+        case 'noShop': sound.invalid(); break;
         case 'deadEnd': {
           // CLASSIC: 消せる Pair が無くなったらすぐ知らせる(本家と同じ)
           lineStreak = 0;
@@ -377,6 +387,7 @@ async function boot() {
     fx.floatText(cx, cy + 44, `+${fmt(ev.clearBonus + ev.perfectBonus + ev.savedBonus + ev.hintBonus)}${ev.perfect ? '  PERFECT' : ''}`, { color: ev.perfect ? PALETTE.green : PALETTE.white, size: 20, dy: -30, life: 2.0 });
     if (ev.chain > 0 && !ev.classic) fx.floatText(cx, cy + 76, `CHAIN ×${ev.mult.toFixed(1)} を持ち越し`, { color: heatColor(game.heat), size: 14, dy: -24, life: 2.0 });
     if (ev.questBonus) fx.floatText(cx, cy + 100, `QUEST CLEAR  +${ev.questBonus}`, { color: PALETTE.green, size: 16, dy: -24, life: 2.0 });
+    if (ev.stageBestUpdated && ev.prevBest) fx.floatText(cx, cy + 124, `STAGE BEST  ${fmt(ev.stageBest)}`, { color: PALETTE.amber, size: 16, dy: -24, life: 2.0 });
     if (ev.lifeGain) { ui.renderLives(game.run.lives, CONFIG.lives.max, { gained: true }); sound.lifeGain(); }
     ui.renderHud(game);
     if (CONFIG.flow.continueAfterClear && !ev.worldEnd && !ev.isLast) {
@@ -405,6 +416,8 @@ async function boot() {
         ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
         ${ev.worldEnd && !ev.isLast && ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">各 Stage で Add +${ev.investAdds}</span></div>` : ''}
         ${ev.worldEnd && !ev.isLast && !ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">開始 Chain +${ev.investChain}${ev.investHearts ? ` · Heart +${ev.investHearts}` : ''}</span></div>` : ''}
+        <div class="row"><span class="k">この Stage の最高得点</span><span class="v${ev.stageBestUpdated ? ' plus' : ''}">${fmt(ev.stageBest)}${ev.stageBestUpdated && ev.prevBest ? ' NEW!' : ''}</span></div>
+        <div class="row"><span class="k">Coin</span><span class="v plus">+${fmt(ev.coinsGained)} → ${fmt(ev.coins)}</span></div>
         <div class="row"><span class="k">World の Rank</span><span class="v">${rankSummaryWorld(game.worldOf(game.run.stageIndex))}</span></div>
         ${ev.classic ? '' : `<div class="row"><span class="k">最高倍率(この Stage / Run)</span><span class="v">×${ev.maxMult.toFixed(1)} / ×${ev.runMaxMult.toFixed(1)}</span></div>`}
         <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
@@ -584,6 +597,7 @@ async function boot() {
         ? '本家に近い遊び方。倍率・制限時間・Heart は無く、得点は定額。Add は 5 回で、残すほど Bonus。Dead End はすぐ知らせる。'
         : 'Chain 倍率と FEVER で高得点を狙う遊び方。Chain は時間で減り、Heart が尽きると Run 終了。'}</div>
       <div class="rows">
+        <div class="row"><span class="k">Coin</span><span class="v">${fmt(game.coins)}</span></div>
         <div class="row"><span class="k">Best Score</span><span class="v">${fmt(game.progress.bestScore)}</span></div>
         <div class="row"><span class="k">Star</span><span class="v">★ ${game.totalStars} / ${stages.length * 3}</span></div>
         <div class="row"><span class="k">Rank</span><span class="v">${rankSummary()}</span></div>
@@ -592,9 +606,11 @@ async function boot() {
         ${canResume ? `<button class="btn btn-primary" id="ov-resume">Continue (STAGE ${pad2(game.stageDef.stage)})</button>` : ''}
         <button class="btn ${canResume ? 'btn-ghost' : 'btn-primary'}" id="ov-new">New Game</button>
         <div class="worlds">${worlds.join('')}</div>
+        <button class="btn btn-ghost" id="ov-records">Records(Stage ごとの最高得点)</button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
       </div>
       <div class="meta">rules verified</div>`);
+    card.querySelector('#ov-records').onclick = showRecords;
     card.querySelectorAll('.mode-tab').forEach((b) => b.addEventListener('click', () => {
       if (b.dataset.mode === game.mode) return;
       game.setMode(b.dataset.mode); applyMode(); showTitle();
@@ -612,6 +628,24 @@ async function boot() {
       ensureAudio(); handle(game.newRun(Number(b.dataset.world) * CONFIG.worldSize));
     }));
     card.querySelector('#ov-rules').onclick = showRules;
+  }
+
+  // Stage ごとの最高得点と Rank(腕前の記録。Coin やショップでは変わらない)
+  function showRecords() {
+    const best = game.progress.stageBest ?? {};
+    const rows = stages.map((s) => {
+      const b = best[s.stage];
+      const r = game.progress.ranks[s.stage];
+      const st = game.progress.stars[s.stage] ?? 0;
+      return `<div class="row"><span class="k">STAGE ${pad2(s.stage)} <small>${s.cellsCount} cells</small></span><span class="v">${b ? fmt(b) : '·'} <span class="ranks"><span class="${r ?? ''}">${r ?? '·'}</span></span> <span class="rec-stars">${'★'.repeat(st)}${'☆'.repeat(3 - st)}</span></span></div>`;
+    }).join('');
+    const card = ui.showOverlay(`
+      <div class="eyebrow">records · ${game.classic ? 'classic' : 'normal'}</div>
+      <h1>Records</h1>
+      <div class="ja">Stage ごとの最高得点、Rank、Star。Coin やショップで買った Add・Hint では変わらない、腕前の記録。</div>
+      <div class="rows rec-rows">${rows}</div>
+      <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
+    card.querySelector('#ov-back').onclick = showTitle;
   }
 
   function showRules() {
@@ -643,6 +677,7 @@ async function boot() {
         <b>CLASSIC モード</b>(Title のタブで切り替え。記録は NORMAL と別): 本家に近い遊び方。Chain 倍率・ゲージ・FEVER・Speed・Heart は無く、1 Pair ${c.score.pairBase} 点(横の隣どうし以外は +${c.classic.pathBonus})、Line ${c.score.rowClear} × 行数の 2 乗、DIGIT CLEAR ${c.classic.digitClear}。Add は ${c.classic.addsPerStage} 回、Hint は常に Pair を 1 組示す。Dead End はすぐ知らせ、Add も無ければ Stage 失敗(得点は半分残り、新しい Board でやり直し)。Perfect は Add も Hint も使わずに Clear。World で残した Add ${c.classic.investAddsPer} 回ごとに、次の World の各 Stage で Add +1(上限 +${c.classic.investAddsCap})。<br>
         <b>Quest</b>: Stage ごとに 1 つお題が出る(「3 を最初に消し切れ」「Add なしで 7 Chain」「斜めで 2 回消せ」「Hint を使わずに Clear」)。達成で +${c.quest.bonus}。どのお題も、その Board で達成できることを確かめてから出している。<br>
         <b>温存の投資</b>: World(5 Stage)で残した Add の回数が、次の World の開始 Chain(1 回ごとに +${c.invest.chainPerAdd}、上限 +${c.invest.chainCap})と Heart(${c.invest.addsPerHeart} 回ごとに +1)になる。<br>
+        <b>Coin とショップ</b>: Stage を Clear すると、その Stage の得点がそのまま Coin として貯まる(Best Score とは別の累計。スロットでも使う)。Hint が尽きると HINT ボタンが BUY HINT(NORMAL ${fmt(c.shop.normal.hint)} / CLASSIC ${fmt(c.shop.classic.hint)} coin)、Add が尽きると ADD ボタンが BUY ADD(${fmt(c.shop.normal.add)} / ${fmt(c.shop.classic.add)} coin)に変わる。Heart はメニューから ${fmt(c.shop.normal.heart)} coin(NORMAL だけ)。買った Add・Hint は温存 Bonus と投資に数えない。買った Add を使えば Perfect は失う。<br>
         <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
@@ -658,7 +693,8 @@ async function boot() {
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
-        <div class="ja">MODE: ${game.classic ? 'CLASSIC' : 'NORMAL'}(Title で切り替え)</div>
+        <div class="ja">MODE: ${game.classic ? 'CLASSIC' : 'NORMAL'}(Title で切り替え) · Coin ${fmt(game.coins)}</div>
+        ${inPlay && game.shopPrices.heart ? `<button class="btn btn-ghost" id="ov-buy-heart" ${game.shopItems().find((e) => e.item === 'heart')?.can ? '' : 'disabled'}>BUY HEART<small>　${fmt(game.shopPrices.heart)} coin · Heart ${game.run.lives}/${CONFIG.lives.max}</small></button>` : ''}
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
         ${inPlay ? `<button class="btn btn-danger" id="ov-giveup">GIVE UP(${game.classic ? '得点は半分残る' : 'Heart −1 · 得点は半分残る'})</button>` : ''}
@@ -668,6 +704,7 @@ async function boot() {
     card.querySelector('#ov-bgm').onclick = () => { bgm.cycle(); showMenu(); };
     card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showMenu; };
     card.querySelector('#ov-title').onclick = showTitle;
+    card.querySelector('#ov-buy-heart')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.buy('heart')); });
     card.querySelector('#ov-giveup')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.giveUp()); });
   }
 
@@ -678,8 +715,20 @@ async function boot() {
     ensureAudio();
     handle(game.tap(Number(el.dataset.pos), Date.now()));
   });
-  document.getElementById('btn-add').onclick = () => { if (!busy && !overlayOpen()) { ensureAudio(); handle(game.useAdd(Date.now())); } };
-  document.getElementById('btn-hint').onclick = () => { if (!busy && !overlayOpen()) { ensureAudio(); handle(game.useHint()); } };
+  document.getElementById('btn-add').onclick = () => {
+    if (busy || overlayOpen()) return;
+    ensureAudio();
+    const shop = game.shopItems().find((e) => e.item === 'add');
+    if (game.stage?.addsLeft <= 0 && shop && shop.can) handle(game.buy('add'));
+    else handle(game.useAdd(Date.now()));
+  };
+  document.getElementById('btn-hint').onclick = () => {
+    if (busy || overlayOpen()) return;
+    ensureAudio();
+    const shop = game.shopItems().find((e) => e.item === 'hint');
+    if (game.stage?.hintsLeft <= 0 && shop && shop.can) handle(game.buy('hint'));
+    else handle(game.useHint());
+  };
   document.getElementById('btn-menu').onclick = showMenu;
   soundLabel();
 

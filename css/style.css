@@ -385,3 +385,12 @@ body.classic .cell.selected { box-shadow:0 0 0 1px var(--heat); }
 .quest-mark { font-family:var(--font-mono); font-size:14px; width:16px; text-align:center; }
 .quest.done { border-color:var(--green); } .quest.done .quest-mark { color:var(--green); } .quest.done .quest-text { color:var(--green); }
 .quest.failed { border-color:var(--border); } .quest.failed .quest-text { color:var(--text-dim); text-decoration:line-through; } .quest.failed .quest-mark { color:var(--text-dim); }
+
+/* ---------- ショップ ---------- */
+.ctl.buy { border-color:var(--amber); }
+.ctl.buy .ctl-label { color:var(--amber); }
+.ctl.buy.ctl-primary { background:var(--amber); border-color:var(--amber); }
+.ctl.buy.ctl-primary .ctl-label { color:#0c0d11; }
+.rec-rows { max-height:46vh; overflow-y:auto; }
+.rec-rows .row .k small { color:var(--text-dim); font-size:10px; margin-left:6px; }
+.rec-stars { color:var(--amber); font-size:11px; letter-spacing:1px; }
