@@ -396,57 +396,196 @@ body.classic .cell.selected { box-shadow:0 0 0 1px var(--heat); }
 .rec-stars { color:var(--amber); font-size:11px; letter-spacing:1px; }
 
 /* ---------- スロット ---------- */
+body.slot { background:radial-gradient(ellipse 120% 70% at 50% 0%, #2b1433 0%, #141026 45%, var(--bg) 100%); }
+body.slot::after { opacity:0.35; }
+body.slot.fever { background:radial-gradient(ellipse 120% 70% at 50% 0%, #4a1030 0%, #1e0f2c 45%, var(--bg) 100%); }
 .slot {
   position:relative; z-index:1; display:flex; flex-direction:column; height:100%; max-width:520px; margin:0 auto;
-  padding:calc(env(safe-area-inset-top, 0px) + 12px) var(--gutter) calc(env(safe-area-inset-bottom, 0px) + 12px);
-  --reel-cell:clamp(56px, 18vw, 84px);
+  padding:calc(env(safe-area-inset-top, 0px) + 10px) var(--gutter) calc(env(safe-area-inset-bottom, 0px) + 12px);
+  --reel-cell:clamp(52px, 17vw, 80px);
+  --gold:#ffcf5a;
 }
 .slot[hidden], .app[hidden] { display:none; }   /* スロット中は THE TEN の画面を隠す(hidden 属性を display:flex より優先) */
-.slot-top { display:flex; justify-content:space-between; align-items:flex-end; padding-bottom:10px; border-bottom:1px solid var(--border); }
-.slot-top .label { font-family:var(--font-mono); font-size:10px; letter-spacing:3px; color:var(--text-dim); }
+
+/* ロゴ */
+.slot-logo { display:flex; align-items:baseline; justify-content:center; gap:10px; margin-bottom:6px; line-height:1; }
+.slot-logo .logo-main {
+  font-family:var(--font-ja); font-weight:500; font-style:italic; font-size:26px; letter-spacing:4px;
+  background:linear-gradient(90deg, var(--gold) 0%, #fff6d6 25%, var(--amber) 50%, var(--rose) 75%, var(--gold) 100%);
+  background-size:200% 100%; -webkit-background-clip:text; background-clip:text; color:transparent;
+  filter:drop-shadow(0 0 8px rgba(245,166,35,0.55));
+  animation:logo-shine 3s linear infinite;
+}
+@keyframes logo-shine { to { background-position:200% 0; } }
+.slot-logo .logo-sub {
+  font-family:var(--font-mono); font-size:10px; letter-spacing:4px; padding:3px 8px; border-radius:3px;
+  color:#0c0d11; background:linear-gradient(180deg, var(--gold), var(--amber)); box-shadow:0 0 10px rgba(245,166,35,0.5);
+}
+
+/* カウンタ(COIN / WIN)と予告ランプ */
+.slot-top { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.slot-top .label { font-family:var(--font-mono); font-size:9px; letter-spacing:3px; color:var(--text-dim); margin-bottom:3px; }
+.slot-top-l, .slot-top-r { flex:1; }
 .slot-top-r { text-align:right; }
-.slot-coins, .slot-win { font-family:var(--font-mono); font-size:24px; font-weight:500; letter-spacing:1px; }
-.slot-win { color:var(--amber); }
+.slot-coins, .slot-win {
+  display:inline-block; min-width:7ch; padding:4px 10px; border-radius:6px; text-align:right;
+  font-family:var(--font-mono); font-size:22px; font-weight:500; letter-spacing:1px; font-variant-numeric:tabular-nums;
+  color:var(--gold); background:#07080c; border:1px solid #3a3320;
+  box-shadow:inset 0 2px 10px rgba(0,0,0,0.9), 0 0 0 2px #1a1710, 0 0 12px rgba(245,166,35,0.15);
+  text-shadow:0 0 8px rgba(245,166,35,0.55);
+}
+.slot-win { color:var(--text); text-shadow:none; }
+.slot-win.pop { animation:win-pop 0.45s cubic-bezier(.2,1.6,.4,1); color:var(--gold); text-shadow:0 0 10px rgba(245,166,35,0.8); }
+.slot-win.big { color:var(--rose); text-shadow:0 0 14px rgba(240,98,146,0.9); border-color:var(--rose); }
+@keyframes win-pop { 0%{transform:scale(1)} 40%{transform:scale(1.25)} 100%{transform:scale(1)} }
 .slot-lamp {
-  font-family:var(--font-ja); font-size:11px; letter-spacing:2px; padding:4px 12px; border:1px solid var(--border-light); color:var(--text-dim);
-  align-self:center; opacity:0.5;
+  width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex:none;
+  font-family:var(--font-ja); font-size:10px; letter-spacing:1px; color:var(--text-dim);
+  background:radial-gradient(circle at 35% 30%, #3a3f5c, #13151e 70%); border:2px solid #2f3347;
+  box-shadow:inset 0 -4px 10px rgba(0,0,0,0.6), 0 2px 6px rgba(0,0,0,0.6);
 }
-.slot-lamp.on { color:#0c0d11; background:var(--rose); border-color:var(--rose); opacity:1; animation:lamp 0.35s steps(2) infinite; box-shadow:0 0 16px rgba(240,98,146,0.8); }
-@keyframes lamp { 0%{background:var(--rose)} 100%{background:var(--amber)} }
-.slot-bonus { display:flex; justify-content:space-between; margin-top:8px; padding:6px 12px; border:1px solid var(--rose); font-family:var(--font-mono); font-size:12px; letter-spacing:3px; color:var(--rose); animation:fever-pulse 0.6s ease-in-out infinite alternate; }
+.slot-lamp.on {
+  color:#fff; border-color:var(--gold);
+  background:radial-gradient(circle at 35% 30%, #ffd1e2, var(--rose) 60%, #b0205a);
+  animation:lamp 0.3s steps(2) infinite; box-shadow:0 0 24px rgba(240,98,146,0.95), 0 0 48px rgba(245,166,35,0.6);
+}
+@keyframes lamp {
+  0%   { background:radial-gradient(circle at 35% 30%, #ffd1e2, var(--rose) 60%, #b0205a); }
+  100% { background:radial-gradient(circle at 35% 30%, #fff3c4, var(--amber) 60%, #b86f00); }
+}
+
+/* BONUS の帯(動く縞) */
+.slot-bonus {
+  display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding:6px 14px; border-radius:4px;
+  font-family:var(--font-mono); font-size:12px; font-weight:500; letter-spacing:3px;
+  background:repeating-linear-gradient(135deg, var(--rose) 0 12px, var(--gold) 12px 24px); background-size:34px 34px;
+  box-shadow:0 0 18px rgba(240,98,146,0.6); animation:stripes 0.8s linear infinite;
+}
+.slot-bonus span { background:rgba(12,13,17,0.75); color:#fff; padding:1px 8px; border-radius:3px; }
 .slot-bonus[hidden] { display:none; }
-.reels { display:flex; justify-content:center; gap:10px; margin:22px 0 10px; }
-.reel {
-  position:relative; width:calc(var(--reel-cell) * 1.3); height:calc(var(--reel-cell) * 3); overflow:hidden;
-  border:1px solid var(--cell-border); background:var(--surface); cursor:pointer; user-select:none;
+@keyframes stripes { to { background-position:34px 0; } }
+
+/* 筐体(リールの箱)と、縁を走るランプ */
+.cabinet {
+  position:relative; margin:14px auto 12px; padding:12px 24px; border-radius:18px;
+  background:linear-gradient(180deg, #454b6e 0%, #1b1e2b 18%, #111320 50%, #1b1e2b 82%, #2b2f48 100%);
+  box-shadow:0 0 0 1px #5a6184, 0 0 0 4px #0c0d11, 0 0 0 5px #3b4058, 0 14px 34px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.12);
 }
-.reel.spinning { border-color:var(--heat); box-shadow:0 0 14px color-mix(in srgb, var(--heat) 40%, transparent); }
+.marquee {
+  height:10px; margin:0 2px;
+  background:
+    radial-gradient(circle at 5px 5px, var(--gold) 2.4px, transparent 3.4px) 0 0 / 20px 10px,
+    radial-gradient(circle at 5px 5px, var(--rose) 2.4px, transparent 3.4px) 10px 0 / 20px 10px;
+  filter:drop-shadow(0 0 3px rgba(245,166,35,0.6)) hue-rotate(0deg);
+  animation:marquee 0.7s steps(2) infinite;
+}
+.marquee.l, .marquee.r {
+  position:absolute; top:12px; bottom:12px; width:10px; height:auto; margin:0;
+  background:
+    radial-gradient(circle at 5px 5px, var(--gold) 2.4px, transparent 3.4px) 0 0 / 10px 20px,
+    radial-gradient(circle at 5px 5px, var(--rose) 2.4px, transparent 3.4px) 0 10px / 10px 20px;
+  animation-name:marquee-v;
+}
+.marquee.l { left:8px; } .marquee.r { right:8px; }
+@keyframes marquee   { to { background-position:20px 0, 30px 0; } }
+@keyframes marquee-v { to { background-position:0 20px, 0 30px; } }
+@keyframes hue { to { filter:drop-shadow(0 0 5px rgba(255,255,255,0.8)) hue-rotate(360deg); } }
+.slot.spinning .marquee { animation-duration:0.28s; }
+.cabinet.win .marquee { animation-duration:0.14s; filter:drop-shadow(0 0 5px rgba(255,255,255,0.8)) hue-rotate(0deg); }
+body.fever .marquee { animation:marquee 0.14s steps(2) infinite, hue 1.2s linear infinite; }
+body.fever .marquee.l, body.fever .marquee.r { animation:marquee-v 0.14s steps(2) infinite, hue 1.2s linear infinite; }
+
+/* リール */
+.reels { position:relative; display:flex; justify-content:center; gap:10px; margin:8px 0; }
+.reels::before {   /* 中央のペイライン */
+  content:''; position:absolute; left:-14px; right:-14px; top:50%; height:2px; margin-top:-1px;
+  background:linear-gradient(90deg, transparent, var(--gold) 15%, var(--gold) 85%, transparent);
+  box-shadow:0 0 8px var(--gold); opacity:0.9;
+}
+.reel {
+  position:relative; width:calc(var(--reel-cell) * 1.3); height:calc(var(--reel-cell) * 3); overflow:hidden; border-radius:8px;
+  background:linear-gradient(180deg, #06070b 0%, #1c1f33 30%, #2a2e4a 50%, #1c1f33 70%, #06070b 100%);
+  border:2px solid #4a506e; box-shadow:inset 0 0 22px rgba(0,0,0,0.85), 0 0 0 1px #0c0d11;
+  cursor:pointer; user-select:none;
+}
+.reel::after {  /* ガラスの反射 */
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(100deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 35%, transparent 50%);
+}
+.reel.spinning { border-color:var(--heat); box-shadow:inset 0 0 22px rgba(0,0,0,0.85), 0 0 16px color-mix(in srgb, var(--heat) 55%, transparent); }
 .reel .strip { position:absolute; left:0; right:0; top:0; will-change:transform; }
 .reel .sym {
   height:var(--reel-cell); display:flex; align-items:center; justify-content:center;
-  font-family:var(--font-mono); font-size:calc(var(--reel-cell) * 0.6); font-weight:500; color:var(--text);
-  border-bottom:1px solid var(--border);
+  font-family:var(--font-mono); font-size:calc(var(--reel-cell) * 0.62); font-weight:500; color:var(--text);
+  text-shadow:0 0 10px currentColor, 0 2px 0 rgba(0,0,0,0.6);
 }
-.reel .sym.t { font-size:calc(var(--reel-cell) * 0.36); letter-spacing:2px; color:var(--rose); }
-.reel .sym.s { color:var(--amber); }
-.reel .sym.hit { background:color-mix(in srgb, var(--amber) 28%, transparent); color:var(--amber); animation:hit 0.3s ease-in-out infinite alternate; }
-@keyframes hit { 0%{box-shadow:inset 0 0 0 1px var(--amber)} 100%{box-shadow:inset 0 0 0 3px var(--amber), 0 0 16px var(--amber)} }
-.reel-mid { position:absolute; left:0; right:0; top:var(--reel-cell); height:var(--reel-cell); pointer-events:none; border-top:1px solid var(--border-light); border-bottom:1px solid var(--border-light); }
-.reel.spinning .sym { filter:blur(0.6px); }
-.slot-stops { display:flex; justify-content:center; gap:10px; }
-.slot-stops .ctl { width:calc(var(--reel-cell) * 1.3); padding:12px 0; }
-.slot-stops .ctl:not(:disabled) { border-color:var(--amber); }
-.slot-stops .ctl:not(:disabled) .ctl-label { color:var(--amber); }
-.slot-pay { display:flex; flex-wrap:wrap; gap:4px 14px; justify-content:center; margin-top:16px; font-family:var(--font-ja); font-size:10px; color:var(--text-dim); }
-.slot-pay b { color:var(--text-muted); font-weight:400; margin-right:4px; }
-.slot-stats { margin-top:auto; text-align:center; font-family:var(--font-mono); font-size:10px; letter-spacing:1px; color:var(--text-dim); padding-bottom:8px; }
-.slot-controls { margin-top:0; }
-
-/* スロットの追加演出・BET の選択・必殺技 */
+/* 足して 10 になる組は同じ色(1 と 9、2 と 8、3 と 7、4 と 6)。5 は白 */
+.reel .sym[data-sym="1"], .reel .sym[data-sym="9"] { color:#7fa8ff; }
+.reel .sym[data-sym="2"], .reel .sym[data-sym="8"] { color:#5fe0a6; }
+.reel .sym[data-sym="3"], .reel .sym[data-sym="7"] { color:#ffc24d; }
+.reel .sym[data-sym="4"], .reel .sym[data-sym="6"] { color:#c4a6ff; }
+.reel .sym[data-sym="5"] { color:#f4f6ff; }
+.reel .sym.t {
+  font-size:calc(var(--reel-cell) * 0.34); font-weight:500; letter-spacing:2px; font-style:italic;
+  background:linear-gradient(180deg, #ffd1e2, var(--rose) 55%, #b0205a); -webkit-background-clip:text; background-clip:text; color:transparent;
+  text-shadow:none; filter:drop-shadow(0 0 8px rgba(240,98,146,0.8));
+}
+.reel .sym.s { color:var(--gold); font-size:calc(var(--reel-cell) * 0.72); text-shadow:0 0 14px rgba(245,166,35,0.9), 0 0 3px #fff; }
+.reel .sym.hit { background:radial-gradient(circle, rgba(255,255,255,0.35), rgba(245,166,35,0.25) 70%); animation:hit 0.3s ease-in-out infinite alternate; }
+@keyframes hit { 0%{box-shadow:inset 0 0 0 2px var(--gold)} 100%{box-shadow:inset 0 0 0 4px #fff, 0 0 20px var(--gold)} }
+.reel-mid {
+  position:absolute; left:0; right:0; top:var(--reel-cell); height:var(--reel-cell); pointer-events:none;
+  border-top:1px solid rgba(245,166,35,0.6); border-bottom:1px solid rgba(245,166,35,0.6);
+  background:linear-gradient(90deg, rgba(245,166,35,0.22), transparent 28%, transparent 72%, rgba(245,166,35,0.22));
+}
+.reel.spinning .sym { filter:blur(0.7px); }
 .reel.reach { border-color:var(--rose); animation:reach 0.3s ease-in-out infinite alternate; }
-@keyframes reach { 0%{box-shadow:0 0 10px rgba(240,98,146,0.5), inset 0 0 0 1px rgba(240,98,146,0.6)} 100%{box-shadow:0 0 28px rgba(240,98,146,0.95), inset 0 0 0 2px rgba(245,166,35,0.9)} }
+@keyframes reach {
+  0%   { box-shadow:inset 0 0 22px rgba(0,0,0,0.85), 0 0 12px rgba(240,98,146,0.6); }
+  100% { box-shadow:inset 0 0 30px rgba(240,98,146,0.35), 0 0 32px rgba(240,98,146,1), 0 0 60px rgba(245,166,35,0.6); }
+}
 body.fever .reel { animation:fever-cell 1.2s ease-in-out infinite alternate; }
 .slot.punch { animation:punch 0.28s cubic-bezier(.2,1.4,.4,1); }
+
+/* STOP ボタン(押せるときは金色に光る) */
+.slot-stops { display:flex; justify-content:center; gap:10px; margin-top:2px; }
+.slot-stops .ctl {
+  width:calc(var(--reel-cell) * 1.3); min-height:0; height:46px; padding:0; justify-content:center; border-radius:999px;
+  background:radial-gradient(circle at 50% 20%, rgba(255,255,255,0.08), transparent 55%), linear-gradient(180deg, #2a2e45, #13151e);
+  border:1px solid #3b4058; box-shadow:0 3px 0 #06070b, 0 4px 10px rgba(0,0,0,0.6); transition:all 0.1s;
+}
+.slot-stops .ctl .ctl-label { font-size:11px; }
+.slot-stops .ctl:disabled { opacity:0.7; }
+.slot-stops .ctl:not(:disabled) {
+  background:radial-gradient(circle at 50% 20%, rgba(255,255,255,0.45), transparent 55%), linear-gradient(180deg, var(--gold), #d9880f);
+  border-color:#ffe39a; box-shadow:0 4px 0 #8a5a0a, 0 0 20px rgba(245,166,35,0.75); animation:stop-glow 0.6s ease-in-out infinite alternate;
+}
+.slot-stops .ctl:not(:disabled) .ctl-label { color:#0c0d11; font-weight:500; }
+.slot-stops .ctl:not(:disabled):active { transform:translateY(3px); box-shadow:0 1px 0 #8a5a0a, 0 0 10px rgba(245,166,35,0.5); }
+@keyframes stop-glow { to { box-shadow:0 4px 0 #8a5a0a, 0 0 32px rgba(245,166,35,1); } }
+
+/* 配当表・成績・下のボタン */
+.slot-pay {
+  display:flex; flex-wrap:wrap; gap:4px 6px; justify-content:center; margin-top:12px; padding:8px 10px; border-radius:10px;
+  font-family:var(--font-ja); font-size:10px; color:var(--text-muted);
+  background:rgba(19,21,30,0.7); border:1px solid #2f3347;
+}
+.slot-pay span { padding:2px 8px; border-radius:999px; border:1px solid var(--border-light); white-space:nowrap; }
+.slot-pay b { font-weight:500; margin-right:4px; color:var(--gold); }
+.slot-pay span:nth-child(1) { border-color:rgba(240,98,146,0.6); } .slot-pay span:nth-child(1) b { color:var(--rose); }
+.slot-pay span:nth-child(2) { border-color:rgba(245,166,35,0.6); }
+.slot-stats { margin-top:auto; text-align:center; font-family:var(--font-mono); font-size:10px; letter-spacing:1px; color:var(--text-dim); padding:8px 0; }
+.slot-controls { margin-top:0; }
+.slot-controls #slot-bet { border-color:rgba(245,166,35,0.6); } .slot-controls #slot-bet .ctl-label { color:var(--gold); }
+.slot-controls .ctl-primary:not(:disabled) {
+  background:linear-gradient(135deg, var(--gold), var(--amber) 45%, var(--rose)); border-color:transparent;
+  box-shadow:0 0 18px rgba(240,98,146,0.45); animation:start-glow 1.2s ease-in-out infinite alternate;
+}
+.slot-controls .ctl-primary:not(:disabled) .ctl-label { font-weight:500; letter-spacing:4px; }
+@keyframes start-glow { to { box-shadow:0 0 30px rgba(245,166,35,0.75); } }
+@media (max-height:680px) { .slot-logo { display:none; } .slot-pay { display:none; } .cabinet { margin:8px auto; } }
+
+/* BET の選択・必殺技 */
 .chips { display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 10px; }
 .chips .chip { padding:8px 12px; font-size:11px; }
 .chips .chip.on { border-color:var(--amber); color:var(--amber); }
