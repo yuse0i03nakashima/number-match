@@ -45,8 +45,8 @@ export class SlotView {
   get cfg() { return this.slot.cfg; }
   get n() { return this.slot.strips[0].length; }
 
-  enter() { this.active = true; this.root.hidden = false; this.renderAll(); document.body.classList.toggle('fever', !!this.slot.bonus); }
-  leave() { this.active = false; this.root.hidden = true; document.body.classList.remove('fever'); }
+  enter() { this.active = true; this.root.hidden = false; this.renderAll(); document.body.classList.add('slot'); document.body.classList.toggle('fever', !!this.slot.bonus); }
+  leave() { this.active = false; this.root.hidden = true; document.body.classList.remove('fever', 'slot'); }
 
   // ---------- 表示 ----------
   renderAll() {
@@ -68,6 +68,7 @@ export class SlotView {
   }
 
   drawReels() {
+    this.root.classList.toggle('spinning', this.reels.some((r) => r.state !== 'stopped'));
     const n = this.n;
     for (let k = 0; k < 3; k++) {
       const r = this.reels[k], strip = this.slot.strips[k];
@@ -125,6 +126,7 @@ export class SlotView {
     this.game.addCoins(-r.bet);
     this.clearHits(); this.clearReach();
     this.$('slot-win').textContent = '0';
+    this.$('slot-win').classList.remove('pop', 'big');
     for (const reel of this.reels) { reel.state = 'spinning'; reel.target = null; reel.bounce = 0; }
     this.$('slot-lamp').classList.toggle('on', !!r.notice);
     if (r.notice) { this.sound.slotLamp(); this.vibrate([20, 40, 20]); }
@@ -206,6 +208,10 @@ export class SlotView {
       if (level >= 1) { this.fx.flash(level === 2 ? 'rgba(240,98,146,0.3)' : 'rgba(245,166,35,0.2)'); this.fx.fireworks(1 + level * 2); }
       this.root.classList.remove('punch'); void this.root.offsetWidth; this.root.classList.add('punch');
       this.sound.slotWin(level);
+      const winEl = this.$('slot-win');
+      winEl.classList.remove('pop', 'big'); void winEl.offsetWidth; winEl.classList.add('pop');
+      if (level === 2) winEl.classList.add('big');
+      this.$('cabinet').classList.add('win');
       this.vibrate(level === 2 ? [60, 40, 60, 40, 150] : [30, 30, 40]);
       // Coin を数えながら足す
       const total = res.win;
@@ -242,6 +248,7 @@ export class SlotView {
     }
     this.game.slotStats = this.slot.toJSON();
     this.game.save();
+    this.$('cabinet').classList.remove('win');
     this.busy = false;
     this.renderAll();
   }

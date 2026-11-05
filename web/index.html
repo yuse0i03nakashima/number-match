@@ -74,16 +74,21 @@
 
   <!-- スロット(SLOT タブ。THE TEN とは別の画面) -->
   <section id="slot" class="slot" hidden>
+    <div class="slot-logo"><span class="logo-main">THE TEN</span><span class="logo-sub">SLOT</span></div>
     <header class="slot-top">
       <div class="slot-top-l"><div class="label">COIN</div><div class="slot-coins" id="slot-coins">0</div></div>
       <div class="slot-lamp" id="slot-lamp">予告</div>
       <div class="slot-top-r"><div class="label">WIN</div><div class="slot-win" id="slot-win">0</div></div>
     </header>
     <div class="slot-bonus" id="slot-bonus" hidden><span id="slot-bonus-label">BIG BONUS</span><span id="slot-bonus-left"></span></div>
+    <div class="cabinet" id="cabinet">
+    <div class="marquee top"></div><div class="marquee l"></div><div class="marquee r"></div>
     <div class="reels" id="reels">
       <div class="reel" data-reel="0"><div class="strip" id="strip-0"></div><div class="reel-mid"></div></div>
       <div class="reel" data-reel="1"><div class="strip" id="strip-1"></div><div class="reel-mid"></div></div>
       <div class="reel" data-reel="2"><div class="strip" id="strip-2"></div><div class="reel-mid"></div></div>
+    </div>
+    <div class="marquee bottom"></div>
     </div>
     <div class="slot-stops">
       <button class="ctl stop" type="button" data-stop="0"><span class="ctl-label">STOP</span></button>
@@ -91,7 +96,7 @@
       <button class="ctl stop" type="button" data-stop="2"><span class="ctl-label">STOP</span></button>
     </div>
     <div class="slot-pay">
-      <span><b>TEN TEN TEN</b> BIG</span><span><b>★★★</b> REG</span><span><b>同じ数字×3</b> 数字×2</span><span><b>合計 10</b> 8</span><span><b>足して 10 + ★</b> 3</span>
+      <span><b>TEN TEN TEN</b> BIG</span><span><b>★★★</b> REG</span><span><b>同じ数字×3</b> 数字×2</span><span><b>合計 10</b> 6</span><span><b>足して 10 + ★</b> 2</span>
     </div>
     <div class="slot-stats" id="slot-stats"></div>
     <footer class="controls slot-controls">
