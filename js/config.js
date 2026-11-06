@@ -80,7 +80,9 @@ export const CONFIG = {
     mode: 'synth',                   // 既定: 'synth'(生成 BGM) | 'off'
     synthVolume: 0.30,               // 生成 BGM の音量
     tonic: 64,                       // 生成 BGM の調(長調の主音の midi 番号)。64 = E。参考曲 Under a Darkening Sky の解析結果(E メジャー)に合わせた
-    bpm: 124,                        // 生成 BGM のテンポ
+    bpm: 124,                        // 生成 BGM のテンポ(1 曲目 dance)
+    sweetBpm: 140,                   // 2 曲目 sweet のテンポ(参考 2 曲 128 と 145 の間)
+    songs: ['dance', 'sweet'],       // World ごとに順に使う曲。World 1 = dance、World 2 = sweet、World 3 = dance、…
   },
   // お題(Quest): Stage ごとに 1 つ。達成で Bonus
   quest: {
