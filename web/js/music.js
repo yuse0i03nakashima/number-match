@@ -1,3 +1,4 @@
+import { SWEET_MELODIES, DEFAULT_SWEET_MELODY, SWEET_MELODY_LEN } from './melodies.js';
 // 生成 BGM(音源ファイルを使わず、WebAudio で合成する電子音の曲)。
 //
 // ねらい: Chain の熱に合わせて「層」を足し引きし、切り替えは必ず小節の頭で行う。
@@ -70,29 +71,7 @@ function buildSweetChords(tonic) {
     return { root, notes: SWEET_INTERVALS[kind].map((i) => root + i) };
   });
 }
-// 旋律: [8 小節通しの 16 分の位置, 主音からの半音, 長さ(16 分の数)]。基準は主音の 1 オクターブ上
-// 参考曲の作り(5 度から主音へ音階を下る 1 小節のフック、同じ音を 16 分 2 つで刻む、頭を 16 分 1 つ遅らせる、
-// 音域は 5 度ぶん、4 小節目だけ上り坂で答える)に沿って書いた。奇数小節は同じフック。2 小節目は III7 の根音に移して持ち上げ、
-// 6 小節目は終わりを V の 3 度に落として落ち着かせず、4・8 小節目は上り坂で答えて次の小節の頭へつなぐ
-const SWEET_MELODY = [
-  // 1 小節目 IVmaj7: フック
-  [1, 7, 1], [2, 7, 1], [3, 5, 1], [4, 4, 1], [5, 4, 1], [6, 2, 2], [9, 4, 1], [10, 4, 1], [11, 2, 1], [12, 0, 1], [13, 0, 3],
-  // 2 小節目 III7: フックを根音に移して持ち上げる(8 = 音階の外)
-  [17, 11, 1], [18, 11, 1], [19, 9, 1], [20, 8, 1], [21, 8, 1], [22, 6, 2], [25, 8, 1], [26, 8, 1], [27, 6, 1], [28, 4, 1], [29, 4, 3],
-  // 3 小節目 vi7: フック
-  [33, 7, 1], [34, 7, 1], [35, 5, 1], [36, 4, 1], [37, 4, 1], [38, 2, 2], [41, 4, 1], [42, 4, 1], [43, 2, 1], [44, 0, 1], [45, 0, 3],
-  // 4 小節目 I7: 上り坂の答え。10(短 7 度)で IV へ引っ張る
-  [48, 0, 1], [49, 2, 1], [50, 4, 2], [52, 5, 2], [54, 7, 2], [56, 10, 4], [60, 7, 2], [62, 5, 2],
-  // 5 小節目 IVmaj7: フック
-  [65, 7, 1], [66, 7, 1], [67, 5, 1], [68, 4, 1], [69, 4, 1], [70, 2, 2], [73, 4, 1], [74, 4, 1], [75, 2, 1], [76, 0, 1], [77, 0, 3],
-  // 6 小節目 V: フック。終わりだけ 3 度(-1)に落として落ち着かせない
-  [81, 7, 1], [82, 7, 1], [83, 5, 1], [84, 4, 1], [85, 4, 1], [86, 2, 2], [89, 4, 1], [90, 4, 1], [91, 2, 1], [92, -1, 1], [93, -1, 3],
-  // 7 小節目 iii7: フック
-  [97, 7, 1], [98, 7, 1], [99, 5, 1], [100, 4, 1], [101, 4, 1], [102, 2, 2], [105, 4, 1], [106, 4, 1], [107, 2, 1], [108, 0, 1], [109, 0, 3],
-  // 8 小節目 II7: 上り坂の答え。6(音階の外)で止めて、次の 7 へ半音で解決
-  [112, 2, 1], [113, 4, 1], [114, 6, 2], [116, 9, 2], [118, 12, 2], [120, 9, 2], [122, 6, 4],
-];
-const SWEET_MELODY_LEN = 8 * 16;
+// 旋律の表は melodies.js(候補を lab.html で聴き比べる)。Music は cfg.sweetMelody か setSweetMelody で受け取る
 // やわらかい歪み(tanh)。808 風ベースの倍音用
 function makeSoftCurve() {
   const n = 1024, curve = new Float32Array(n);
@@ -109,6 +88,8 @@ export class Music {
     this.song = 'dance';                // 'dance'(元の曲) | 'sweet'(2 曲目)。切り替えは小節の頭
     this.pendingSong = null;
     this.sweetBpm = cfg.sweetBpm ?? 150;
+    this.sweetMelody = cfg.sweetMelody ?? SWEET_MELODIES[DEFAULT_SWEET_MELODY].notes;
+    this.melodyOnly = false;            // lab 用: 旋律だけ鳴らす
     this.chords = buildChords(this.tonic);
     this.penta = buildPenta(this.tonic);
     this.ctx = null;
@@ -223,6 +204,7 @@ export class Music {
     if (this.playing) { this.pendingSong = name; return; }
     this.applySong(name);
   }
+  setSweetMelody(notes) { this.sweetMelody = notes; }
   bpmFor(song) {
     if (this.calm) return this.calm.bpm;
     return song === 'sweet' ? this.sweetBpm : (this.cfg.bpm ?? 124);
@@ -271,6 +253,7 @@ export class Music {
 
   // ---------- 2 曲目 sweet ----------
   playBarSweet(t, bar) {
+    if (this.melodyOnly) return;
     const chord = this.chordAt(bar);
     const barLen = this.stepSec * STEPS_PER_BAR;
     for (const m of chord.notes) {
@@ -293,6 +276,7 @@ export class Music {
     const wild = this.fever && !(this.calm && this.calm.feverCalm);
 
     // ドラム: 四つ打ち、2・4 拍にスネア、8 分のハイハット。層 3 からは 2 小節に 1 回 16 分の連打。FEVER は 16 分
+    if (!this.melodyOnly) {
     if (s % 4 === 0) this.kick(t);
     if (s === 4 || s === 12) this.snare(t);
     const roll = L >= 3 && bar % 2 === 1 && s >= 13;
@@ -310,11 +294,12 @@ export class Music {
     if (stabs[s]) {
       for (const [i, m] of v.entries()) this.pluck(t + i * 0.005, mtof(m + 12), stabs[s] * (i === 0 ? 0.6 : 1));
     }
+    }
 
     // 旋律(層 1 から。曲の顔なので最初から鳴らす)。層 4 / FEVER では 1 オクターブ下でも重ねる
     if (L >= 1) {
       const pos = (bar * STEPS_PER_BAR + s) % SWEET_MELODY_LEN;
-      const note = SWEET_MELODY.find((n) => n[0] === pos);
+      const note = this.sweetMelody.find((n) => n[0] === pos);
       if (note) {
         const m = this.tonic + 12 + note[1];
         const dur = this.stepSec * note[2] * 0.9;
@@ -326,7 +311,7 @@ export class Music {
       }
     }
     // 高いベル(層 3〜): 16 分の 1・5・9・13 に和音の音を上から順に
-    if (L >= 3 && s % 4 === 1) {
+    if (L >= 3 && s % 4 === 1 && !this.melodyOnly) {
       const m = v[(3 - Math.floor(s / 4)) % v.length] + 24;
       this.tone({ t, freq: mtof(m), type: 'sine', dur: this.stepSec * 1.6, gain: 0.055, attack: 0.002, release: 0.14, cutoff: 9000, toDelay: true });
     }

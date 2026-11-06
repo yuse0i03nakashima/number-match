@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BGM LAB — sweet の旋律を聴き比べる</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px; background: #14121c; color: #f1e9ff; font: 16px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { margin: 4px 0 12px; color: #b9b0cc; font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; align-items: center; }
+  button { font: inherit; padding: 10px 16px; border-radius: 10px; border: 1px solid #5a4d7a; background: #2a2440; color: #fff; }
+  button.on { background: #ffb347; color: #231a10; border-color: #ffb347; font-weight: 700; }
+  button.big { padding: 14px 24px; font-size: 18px; }
+  label { font-size: 14px; color: #d8cff0; }
+  input[type=range] { width: 200px; vertical-align: middle; }
+  textarea { width: 100%; min-height: 120px; font: 12px/1.4 ui-monospace, monospace; background: #0f0d16; color: #e7defc; border: 1px solid #3a3352; border-radius: 8px; padding: 8px; box-sizing: border-box; }
+  .desc { font-size: 13px; color: #9c93b3; }
+  .bar { height: 10px; background: #2a2440; border-radius: 5px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: #ffb347; }
+</style>
+</head>
+<body>
+<h1>BGM LAB</h1>
+<p>sweet の旋律の候補を聴き比べる作業用のページです。START を押して、A〜D を切り替えてください(切り替えはすぐ効きます)。</p>
+<div class="row"><button id="start" class="big">START</button><button id="stop">STOP</button><span id="pos" class="desc"></span></div>
+<div class="bar"><i id="meter"></i></div>
+<div class="row" id="melodies"></div>
+<p id="desc" class="desc"></p>
+<div class="row">
+  <label>テンポ <input id="bpm" type="range" min="120" max="170" step="1" value="150"> <span id="bpmv">150</span></label>
+</div>
+<div class="row">
+  <label>調 <select id="key"><option value="64">E(THE TEN)</option><option value="61">D♭(THE ROOMS)</option><option value="60">C</option></select></label>
+  <label>層 <select id="layers"><option value="0">0(旋律だけ)</option><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label>
+  <label><input id="fever" type="checkbox"> FEVER</label>
+  <label><input id="solo" type="checkbox"> 旋律だけ</label>
+</div>
+<p>下の表は選んだ候補の旋律です。書き換えて APPLY すると、その場で鳴ります。1 行が 1 小節。[位置, 半音, 長さ]。</p>
+<textarea id="notes"></textarea>
+<div class="row"><button id="apply">APPLY</button><span id="err" class="desc"></span></div>
+<script type="module" src="js/lab.js"></script>
+</body>
+</html>

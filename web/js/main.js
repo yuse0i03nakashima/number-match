@@ -3,6 +3,7 @@
 // 時間 → game.tick() を 200ms ごとに呼び、Chain ゲージと FEVER を進める。
 
 import { CONFIG } from './config.js';
+import { SWEET_MELODIES } from './melodies.js';
 import { Game } from './game.js';
 import { Renderer } from './render.js';
 import { FX, heatColor, PALETTE } from './fx.js';
@@ -25,7 +26,7 @@ async function boot() {
   const fx = new FX(document.getElementById('fx'), CONFIG.fx);
   const sound = new Sound(CONFIG.audio.masterVolume);
   // BGM は生成(music.js)。メニューで SYNTH / OFF を切り替える
-  const synth = new Music({ volume: CONFIG.bgm.synthVolume, tonic: CONFIG.bgm.tonic, bpm: CONFIG.bgm.bpm, sweetBpm: CONFIG.bgm.sweetBpm });
+  const synth = new Music({ volume: CONFIG.bgm.synthVolume, tonic: CONFIG.bgm.tonic, bpm: CONFIG.bgm.bpm, sweetBpm: CONFIG.bgm.sweetBpm, sweetMelody: SWEET_MELODIES[CONFIG.bgm.sweetMelody].notes });
   const loadBgmMode = () => { try { return localStorage.getItem('numbermatch.bgmMode') ?? CONFIG.bgm.mode; } catch { return CONFIG.bgm.mode; } };
   const bgm = {
     mode: loadBgmMode(),
