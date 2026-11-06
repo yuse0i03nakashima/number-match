@@ -25,7 +25,7 @@ async function boot() {
   const fx = new FX(document.getElementById('fx'), CONFIG.fx);
   const sound = new Sound(CONFIG.audio.masterVolume);
   // BGM は生成(music.js)。メニューで SYNTH / OFF を切り替える
-  const synth = new Music({ volume: CONFIG.bgm.synthVolume, tonic: CONFIG.bgm.tonic, bpm: CONFIG.bgm.bpm });
+  const synth = new Music({ volume: CONFIG.bgm.synthVolume, tonic: CONFIG.bgm.tonic, bpm: CONFIG.bgm.bpm, sweetBpm: CONFIG.bgm.sweetBpm });
   const loadBgmMode = () => { try { return localStorage.getItem('numbermatch.bgmMode') ?? CONFIG.bgm.mode; } catch { return CONFIG.bgm.mode; } };
   const bgm = {
     mode: loadBgmMode(),
@@ -35,6 +35,9 @@ async function boot() {
     stop() { synth.stop(); },
     setHeat(h) { synth.setHeat(h); },
     setFever(on) { synth.setFever(on); },
+    setSong(name) { synth.setSong(name); },
+    // World ごとに曲を替える(World 1 は dance、World 2 は sweet、…)。スロットは dance
+    songFor(stageIndex) { const order = CONFIG.bgm.songs; return order[game.worldOf(stageIndex) % order.length]; },
     duck(on) { synth.duck(on); },
     level() { return this.active ? this.active.level() : 0; },
     cycle() {
@@ -141,7 +144,7 @@ async function boot() {
   // Chain ゲージと FEVER は時間で動くので、定期的に進めて HUD を描き直す
   setInterval(() => {
     // BGM: Stage 中は Chain の熱と FEVER に合わせ、Title では止める。オーバーレイ中は小さく
-    if (slotActive) { bgm.setHeat(slot.bonus ? 0.85 : 0.3); bgm.setFever(!!slot.bonus); bgm.play(); bgm.duck(overlayOpen()); if (slot.bonus && !overlayOpen()) fx.embers(4); return; }
+    if (slotActive) { bgm.setSong('dance'); bgm.setHeat(slot.bonus ? 0.85 : 0.3); bgm.setFever(!!slot.bonus); bgm.play(); bgm.duck(overlayOpen()); if (slot.bonus && !overlayOpen()) fx.embers(4); return; }
     if (game.stage?.status === 'play' || game.stage?.status === 'clear') { bgm.setHeat(game.heat); bgm.setFever(game.inFever); bgm.play(); }
     else if (titleShown) bgm.stop();
     bgm.duck(overlayOpen());
@@ -296,6 +299,7 @@ async function boot() {
         }
         case 'stageStart': {
           lineStreak = 0; titleShown = false;
+          bgm.setSong(bgm.songFor(ev.stageIndex));
           ui.hideOverlay();
           redraw();
           ui.boardWrap.scrollTo({ top: 0 });

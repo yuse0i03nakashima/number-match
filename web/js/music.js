@@ -11,6 +11,13 @@
 //   層 3(熱 0.75〜)    アルペジオのリード(16 分)+ エコー
 //   FEVER              全層 + ハイハット 16 分 + スネア + リードを 1 オクターブ上 + フィルタの開閉 + キックに合わせた音量のポンプ
 //
+// 2 曲目「sweet」(World ごとに切り替える。THE ROOMS と同じ曲):
+//   参考 2 曲(案山子「真生活」、Dyolow「ROCK PAPER SCISSORS!」)の共通点を借りた、
+//   アップテンポで甘く、どこか切ない曲。BPM 140、8 小節
+//   IVmaj7 → III7 → vi7 → I7 → IVmaj7 → V → iii7 → II7(III7 と II7 が切なさ、IVmaj7 と I7 が甘さ)
+//   層 1: 四つ打ち・2 と 4 のスネア・8 分ハット・808 風ベース・プラックの和音・パッド
+//   層 2: 旋律   層 3: 高いベルと 16 分のハット連打   層 4 / FEVER: 旋律を 1 オクターブ上でも重ね、16 分ハット
+//
 // 時間の管理は「先読みスケジューラ」(Chris Wilson, A Tale of Two Clocks):
 //   setInterval で 50ms ごとに起き、AudioContext の時計で 0.2 秒先までの音を予約する。
 //   JavaScript のタイマーのゆれが音のタイミングに出ない。
@@ -44,12 +51,53 @@ function buildPenta(tonic) {
   return out;
 }
 
+// ---------- 2 曲目「sweet」の素材 ----------
+// コード進行は主音からの半音で持つ(III7 や II7 のように、音階に無い音を含むため)
+const SWEET_PROGRESSION = [
+  { degree: 5, kind: 'maj7' },   // IVmaj7
+  { degree: 4, kind: '7' },      // III7   (切ない: 音階の外の長 3 度)
+  { degree: 9, kind: 'm7' },     // vi7
+  { degree: 0, kind: '7' },      // I7     (属七。IV へ戻る甘さ)
+  { degree: 5, kind: 'maj7' },   // IVmaj7
+  { degree: 7, kind: 'maj' },    // V
+  { degree: 4, kind: 'm7' },     // iii7
+  { degree: 2, kind: '7' },      // II7    (V7/ii。ここも切ない)
+];
+const SWEET_INTERVALS = { maj7: [0, 4, 7, 11], maj: [0, 4, 7, 12], m7: [0, 3, 7, 10], '7': [0, 4, 7, 10] };
+function buildSweetChords(tonic) {
+  return SWEET_PROGRESSION.map(({ degree, kind }) => {
+    const root = tonic - 12 + degree;
+    return { root, notes: SWEET_INTERVALS[kind].map((i) => root + i) };
+  });
+}
+// 旋律: [8 小節通しの 16 分の位置, 主音からの半音, 長さ(16 分の数)]。基準は主音の 1 オクターブ上
+const SWEET_MELODY = [
+  [0, 12, 2], [2, 16, 2], [4, 17, 2], [6, 16, 2], [8, 14, 4], [12, 12, 2], [14, 11, 2],
+  [16, 8, 6], [22, 11, 2], [24, 12, 4], [28, 9, 2], [30, 8, 2],
+  [32, 9, 2], [34, 12, 2], [36, 16, 4], [40, 14, 2], [42, 12, 2], [44, 9, 4],
+  [48, 7, 2], [50, 10, 2], [52, 12, 4], [56, 10, 2], [58, 9, 2], [60, 7, 4],
+  [64, 12, 2], [66, 16, 2], [68, 17, 2], [70, 19, 2], [72, 16, 4], [76, 14, 2], [78, 12, 2],
+  [80, 11, 4], [84, 12, 2], [86, 14, 2], [88, 11, 6],
+  [96, 7, 2], [98, 11, 2], [100, 14, 4], [104, 11, 2], [106, 7, 2], [108, 4, 4],
+  [112, 6, 4], [116, 9, 2], [118, 12, 2], [120, 9, 6],
+];
+const SWEET_MELODY_LEN = 8 * 16;
+// やわらかい歪み(tanh)。808 風ベースの倍音用
+function makeSoftCurve() {
+  const n = 1024, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = Math.tanh(x * 2.2); }
+  return curve;
+}
+
 export class Music {
   constructor(cfg) {
     this.cfg = cfg;                     // { volume, tonic?, bpm? }
     this.tonic = cfg.tonic ?? 60;       // 60 = C
     this.bpm = cfg.bpm ?? 124;
     this.stepSec = 60 / this.bpm / 4;   // 16 分音符 1 つの秒数
+    this.song = 'dance';                // 'dance'(元の曲) | 'sweet'(2 曲目)。切り替えは小節の頭
+    this.pendingSong = null;
+    this.sweetBpm = cfg.sweetBpm ?? 140;
     this.chords = buildChords(this.tonic);
     this.penta = buildPenta(this.tonic);
     this.ctx = null;
@@ -128,7 +176,7 @@ export class Music {
   // CLASSIC モードの入り切り。テンポは次の小節の頭から変わる(途中で変えると拍がよれる)
   setCalm(settings) {
     this.calm = settings;
-    this.pendingBpm = settings ? settings.bpm : (this.cfg.bpm ?? 124);
+    this.pendingBpm = this.bpmFor(this.song);
     this.updateMaster(0.8);
   }
 
@@ -150,11 +198,32 @@ export class Music {
     if (Math.abs(heat - this.heat) < 0.005 && this.ctx) return;
     this.heat = heat;
     if (!this.ctx) return;
-    const cutoff = 3500 * Math.pow(12000 / 3500, heat);
+    const base = this.song === 'sweet' ? 6500 : 3500;
+    const cutoff = base * Math.pow(13000 / base, heat);
     this.lowpass.frequency.setTargetAtTime(cutoff, this.ctx.currentTime, 0.8);
     this.updateMaster(0.8);
   }
   setFever(on) { this.fever = on; }
+
+  // 曲を選ぶ。鳴っている最中なら次の小節の頭で切り替える(拍を崩さない)
+  setSong(name) {
+    if (name !== 'dance' && name !== 'sweet') return;
+    if (name === this.song && !this.pendingSong) return;
+    if (this.playing) { this.pendingSong = name; return; }
+    this.applySong(name);
+  }
+  bpmFor(song) {
+    if (this.calm) return this.calm.bpm;
+    return song === 'sweet' ? this.sweetBpm : (this.cfg.bpm ?? 124);
+  }
+  applySong(name) {
+    this.song = name;
+    this.pendingSong = null;
+    this.chords = name === 'sweet' ? buildSweetChords(this.tonic) : buildChords(this.tonic);
+    this.pendingBpm = this.bpmFor(name);
+    if (!this.playing) { this.bpm = this.pendingBpm; this.stepSec = 60 / this.bpm / 4; this.pendingBpm = null; }
+    if (this.ctx) { const h = this.heat; this.heat = -1; this.setHeat(h); }
+  }
   duck(on) { if (this.ducked !== on) { this.ducked = on; this.updateMaster(0.5); } }
 
   level() {
@@ -173,6 +242,7 @@ export class Music {
       const s = this.step % STEPS_PER_BAR;
       const bar = Math.floor(this.step / STEPS_PER_BAR);
       if (s === 0) {
+        if (this.pendingSong) this.applySong(this.pendingSong);
         if (this.pendingBpm !== null) { this.bpm = this.pendingBpm; this.stepSec = 60 / this.bpm / 4; this.delay.delayTime.setValueAtTime(this.stepSec * 3, this.nextTime); this.pendingBpm = null; }
         this.layers = this.layersFor(this.heat);     // 層の切り替えは小節の頭だけ
         this.playBar(this.nextTime, bar);
@@ -185,8 +255,100 @@ export class Music {
 
   chordAt(bar) { return this.chords[bar % this.chords.length]; }
 
+  playBar(t, bar) { if (this.song === 'sweet') this.playBarSweet(t, bar); else this.playBarDance(t, bar); }
+  playStep(t, bar, s) { if (this.song === 'sweet') this.playStepSweet(t, bar, s); else this.playStepDance(t, bar, s); }
+
+  // ---------- 2 曲目 sweet ----------
+  playBarSweet(t, bar) {
+    const chord = this.chordAt(bar);
+    const barLen = this.stepSec * STEPS_PER_BAR;
+    for (const m of chord.notes) {
+      for (const det of [-6, 6]) {
+        this.tone({ t, freq: mtof(m + 12), type: 'triangle', detune: det, dur: barLen * 1.02, gain: 0.028, attack: 0.3, release: 0.5, cutoff: 2800 });
+      }
+    }
+    if (this.fever && !(this.calm && this.calm.feverCalm)) {
+      this.lowpass.frequency.cancelScheduledValues(t);
+      this.lowpass.frequency.setValueAtTime(5000, t);
+      this.lowpass.frequency.exponentialRampToValueAtTime(15000, t + barLen * 0.5);
+      this.lowpass.frequency.exponentialRampToValueAtTime(6500, t + barLen);
+    }
+  }
+
+  playStepSweet(t, bar, s) {
+    const chord = this.chordAt(bar);
+    const L = this.layers;
+    const v = chord.notes;
+    const wild = this.fever && !(this.calm && this.calm.feverCalm);
+
+    // ドラム: 四つ打ち、2・4 拍にスネア、8 分のハイハット。層 3 からは 2 小節に 1 回 16 分の連打。FEVER は 16 分
+    if (s % 4 === 0) this.kick(t);
+    if (s === 4 || s === 12) this.snare(t);
+    const roll = L >= 3 && bar % 2 === 1 && s >= 13;
+    if (s % 2 === 0 || roll || wild) this.hat(t, roll ? 0.07 : s % 4 === 2 ? 0.1 : 0.06, s === 14 && !roll);
+
+    // 808 風のベース: 音の頭で上から滑り込む
+    const bassAt = { 0: 6, 6: 2, 8: 4, 12: 2, 14: 2 };
+    if (bassAt[s]) {
+      const m = chord.root - 12 + (s === 14 ? 12 : s === 12 ? 7 : 0);
+      this.bass808(t, mtof(m), this.stepSec * bassAt[s], s === 0 ? 1.5 : 1.12);
+    }
+
+    // プラックの和音: 裏で刻むシンコペーション
+    const stabs = { 0: 0.13, 3: 0.1, 6: 0.12, 10: 0.1, 12: 0.08, 14: 0.11 };
+    if (stabs[s]) {
+      for (const [i, m] of v.entries()) this.pluck(t + i * 0.005, mtof(m + 12), stabs[s] * (i === 0 ? 0.6 : 1));
+    }
+
+    // 旋律(層 2〜)。層 4 / FEVER では 1 オクターブ上でも重ねる
+    if (L >= 2) {
+      const pos = (bar * STEPS_PER_BAR + s) % SWEET_MELODY_LEN;
+      const note = SWEET_MELODY.find((n) => n[0] === pos);
+      if (note) {
+        const m = this.tonic + 12 + note[1];
+        const dur = this.stepSec * note[2] * 0.9;
+        this.tone({ t, freq: mtof(m), type: 'square', dur, gain: 0.1, attack: 0.006, release: Math.min(0.18, dur * 0.4), cutoff: 2600, toDelay: true });
+        this.tone({ t, freq: mtof(m), type: 'triangle', detune: 6, dur, gain: 0.11, attack: 0.008, release: Math.min(0.18, dur * 0.4), cutoff: 4200 });
+        if (L >= 4) this.tone({ t, freq: mtof(m + 12), type: 'triangle', dur, gain: 0.07, attack: 0.008, release: Math.min(0.18, dur * 0.4), cutoff: 6000, toDelay: true });
+      }
+    }
+    // 高いベル(層 3〜): 16 分の 1・5・9・13 に和音の音を上から順に
+    if (L >= 3 && s % 4 === 1) {
+      const m = v[(3 - Math.floor(s / 4)) % v.length] + 24;
+      this.tone({ t, freq: mtof(m), type: 'sine', dur: this.stepSec * 1.6, gain: 0.055, attack: 0.002, release: 0.14, cutoff: 9000, toDelay: true });
+    }
+  }
+
+  // プラック: のこぎり波のフィルタを一気に閉じる(明るい立ち上がり、短い余韻)
+  pluck(t, freq, gain) {
+    const ctx = this.ctx;
+    const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = freq;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 1.2;
+    f.frequency.setValueAtTime(4200, t); f.frequency.exponentialRampToValueAtTime(600, t + 0.16);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + this.stepSec * 1.6);
+    osc.connect(f); f.connect(g); g.connect(this.lowpass);
+    osc.start(t); osc.stop(t + this.stepSec * 1.7);
+  }
+
+  // 808 風ベース: 正弦波を上から滑り込ませ、少し歪ませて倍音を足す
+  bass808(t, freq, dur, slide) {
+    const ctx = this.ctx;
+    const osc = ctx.createOscillator(); osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq * slide, t); osc.frequency.exponentialRampToValueAtTime(freq, t + 0.07);
+    const shaper = ctx.createWaveShaper(); shaper.curve = this.softCurve ?? (this.softCurve = makeSoftCurve());
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.006);
+    g.gain.setValueAtTime(0.5, t + Math.max(0.01, dur - 0.08)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const out = ctx.createGain(); out.gain.value = 0.42;
+    osc.connect(g); g.connect(shaper); shaper.connect(out); out.connect(this.drumBus);
+    osc.start(t); osc.stop(t + dur + 0.05);
+  }
+
+  // ---------- 1 曲目 dance ----------
   // 小節単位の音: パッド
-  playBar(t, bar) {
+  playBarDance(t, bar) {
     const chord = this.chordAt(bar);
     const barLen = this.stepSec * STEPS_PER_BAR;
     for (const m of chord.notes) {
@@ -206,7 +368,7 @@ export class Music {
   }
 
   // 16 分単位の音
-  playStep(t, bar, s) {
+  playStepDance(t, bar, s) {
     const chord = this.chordAt(bar);
     const L = this.layers;
     const onBeat = s % 4 === 0, offBeat = s % 4 === 2;
