@@ -71,15 +71,24 @@ function buildSweetChords(tonic) {
   });
 }
 // 旋律: [8 小節通しの 16 分の位置, 主音からの半音, 長さ(16 分の数)]。基準は主音の 1 オクターブ上
+// 毎小節同じリズムのフックを繰り返し、3 つ目の長い音にその小節の和音の特徴音を置く。音域は 12〜24(高い)
 const SWEET_MELODY = [
-  [0, 12, 2], [2, 16, 2], [4, 17, 2], [6, 16, 2], [8, 14, 4], [12, 12, 2], [14, 11, 2],
-  [16, 8, 6], [22, 11, 2], [24, 12, 4], [28, 9, 2], [30, 8, 2],
-  [32, 9, 2], [34, 12, 2], [36, 16, 4], [40, 14, 2], [42, 12, 2], [44, 9, 4],
-  [48, 7, 2], [50, 10, 2], [52, 12, 4], [56, 10, 2], [58, 9, 2], [60, 7, 4],
-  [64, 12, 2], [66, 16, 2], [68, 17, 2], [70, 19, 2], [72, 16, 4], [76, 14, 2], [78, 12, 2],
-  [80, 11, 4], [84, 12, 2], [86, 14, 2], [88, 11, 6],
-  [96, 7, 2], [98, 11, 2], [100, 14, 4], [104, 11, 2], [106, 7, 2], [108, 4, 4],
-  [112, 6, 4], [116, 9, 2], [118, 12, 2], [120, 9, 6],
+  // 1 小節目 IVmaj7
+  [0, 16, 2], [2, 19, 1], [3, 21, 3], [6, 19, 2], [8, 16, 2], [10, 14, 2], [12, 16, 4],
+  // 2 小節目 III7(20 が音階の外の長 3 度、23 が 7 度)
+  [16, 20, 2], [18, 19, 1], [19, 16, 3], [22, 14, 2], [24, 16, 2], [26, 20, 2], [28, 23, 4],
+  // 3 小節目 vi7
+  [32, 24, 2], [34, 23, 1], [35, 21, 3], [38, 19, 2], [40, 21, 2], [42, 24, 2], [44, 21, 4],
+  // 4 小節目 I7(22 が短 7 度。IV へ戻る)
+  [48, 19, 2], [50, 21, 1], [51, 22, 3], [54, 19, 2], [56, 16, 4], [60, 14, 2], [62, 16, 2],
+  // 5 小節目 IVmaj7(1 小節目と同じフック)
+  [64, 16, 2], [66, 19, 1], [67, 21, 3], [70, 19, 2], [72, 16, 2], [74, 14, 2], [76, 16, 4],
+  // 6 小節目 V
+  [80, 19, 2], [82, 21, 1], [83, 23, 3], [86, 19, 2], [88, 16, 2], [90, 14, 2], [92, 19, 4],
+  // 7 小節目 iii7
+  [96, 23, 2], [98, 21, 1], [99, 19, 3], [102, 16, 2], [104, 14, 2], [106, 16, 2], [108, 19, 4],
+  // 8 小節目 II7(18 が音階の外の長 3 度。14 で終えて 1 小節目の 16 へ上がる)
+  [112, 18, 2], [114, 21, 1], [115, 24, 3], [118, 21, 2], [120, 18, 2], [122, 16, 2], [124, 14, 4],
 ];
 const SWEET_MELODY_LEN = 8 * 16;
 // やわらかい歪み(tanh)。808 風ベースの倍音用
@@ -97,7 +106,7 @@ export class Music {
     this.stepSec = 60 / this.bpm / 4;   // 16 分音符 1 つの秒数
     this.song = 'dance';                // 'dance'(元の曲) | 'sweet'(2 曲目)。切り替えは小節の頭
     this.pendingSong = null;
-    this.sweetBpm = cfg.sweetBpm ?? 140;
+    this.sweetBpm = cfg.sweetBpm ?? 150;
     this.chords = buildChords(this.tonic);
     this.penta = buildPenta(this.tonic);
     this.ctx = null;
@@ -307,8 +316,10 @@ export class Music {
       if (note) {
         const m = this.tonic + 12 + note[1];
         const dur = this.stepSec * note[2] * 0.9;
-        this.tone({ t, freq: mtof(m), type: 'square', dur, gain: 0.1, attack: 0.006, release: Math.min(0.18, dur * 0.4), cutoff: 2600, toDelay: true });
-        this.tone({ t, freq: mtof(m), type: 'triangle', detune: 6, dur, gain: 0.11, attack: 0.008, release: Math.min(0.18, dur * 0.4), cutoff: 4200 });
+        const rel = Math.min(0.16, dur * 0.4);
+        this.tone({ t, freq: mtof(m), type: 'triangle', dur, gain: 0.15, attack: 0.004, release: rel, cutoff: 7000 });
+        this.tone({ t, freq: mtof(m), type: 'square', detune: -5, dur, gain: 0.07, attack: 0.006, release: rel, cutoff: 3600, toDelay: true });
+        this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: 7, dur, gain: 0.05, attack: 0.006, release: rel, cutoff: 4200 });
         if (L >= 4) this.tone({ t, freq: mtof(m + 12), type: 'triangle', dur, gain: 0.07, attack: 0.008, release: Math.min(0.18, dur * 0.4), cutoff: 6000, toDelay: true });
       }
     }
