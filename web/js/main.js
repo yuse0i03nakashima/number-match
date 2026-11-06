@@ -36,8 +36,8 @@ async function boot() {
     setHeat(h) { synth.setHeat(h); },
     setFever(on) { synth.setFever(on); },
     setSong(name) { synth.setSong(name); },
-    // World ごとに曲を替える(World 1 は dance、World 2 は sweet、…)。スロットは dance
-    songFor(stageIndex) { const order = CONFIG.bgm.songs; return order[game.worldOf(stageIndex) % order.length]; },
+    // Stage ごとに曲を替える(Stage 1 は dance、Stage 2 は sweet、…)。スロットは dance
+    songFor(stageIndex) { const order = CONFIG.bgm.songs; return order[stageIndex % order.length]; },
     duck(on) { synth.duck(on); },
     level() { return this.active ? this.active.level() : 0; },
     cycle() {
