@@ -916,12 +916,7 @@ async function boot() {
 
   function vsWire(link) {
     link.on('data', (d) => vsOnData(d));
-    link.on('close', () => {
-      vs.rival.gone = true;
-      if (vs.playing && !vs.finished) { ui.toast('相手との接続が切れた。自分の得点は確定できる', 3000); vsRenderBar(); }
-      else if (vs.finished && !vs.rivalFinal) showVsResult();
-      else if (!vs.playing && vs.active) { ui.toast('相手が退出した', 2500); showVsLobby(); }
-    });
+    link.on('close', () => vsRivalGone('相手との接続が切れた'));
     link.on('error', (msg) => ui.toast(msg, 3000));
   }
 
@@ -1014,15 +1009,19 @@ async function boot() {
         else ui.toast(`相手が得点を確定した: ${fmt(d.score)}`, 2500);
         break;
       }
-      case 'leave': {
-        vs.rival.gone = true;
-        if (vs.playing && !vs.finished) { ui.toast('相手が退出した。自分の得点は確定できる', 3000); vsRenderBar(); }
-        else if (vs.finished) showVsResult();
-        else { ui.toast('相手が退出した', 2500); showVsLobby(); }
-        break;
-      }
+      case 'leave': vsRivalGone('相手が退出した'); break;
       default: break;
     }
+  }
+
+  /** 相手がいなくなった(退出か切断)。対戦中なら続けて確定できる。終わっていれば結果に残す。部屋なら host は待ち直し、guest は VS の入口へ。 */
+  function vsRivalGone(why) {
+    if (!vs.active || vs.rival.gone) return;
+    vs.rival.gone = true;
+    if (vs.playing && !vs.finished) { ui.toast(`${why}。自分の得点は確定できる`, 3000); vsRenderBar(); return; }
+    if (vs.finished || vs.myFinal) { showVsResult(); return; }
+    ui.toast(why, 2500);
+    if (vs.host) showVsLobby(); else { leaveVs(); titleTab = 'vs'; showTitle(); }
   }
 
   /** 3・2・1 のあと、同じ Board で始める。 */
@@ -1142,6 +1141,7 @@ async function boot() {
         ${vs.myFinal?.timeBonus ? `<div class="row"><span class="k">Time Bonus(自分)</span><span class="v plus">+${fmt(vs.myFinal.timeBonus)}</span></div>` : ''}
       </div>
       <div class="actions">
+        ${vs.rival.gone ? '<div class="ja">相手は退出した。もう一度遊ぶには Title から部屋を作り直す</div>' : ''}
         ${vs.host && !vs.rival.gone ? '<button class="btn btn-primary" id="ov-rematch">REMATCH(新しい Board)</button>' : ''}
         ${!vs.host && !vs.rival.gone ? '<div class="ja">部屋の主が REMATCH を押すと次の対戦が始まる</div>' : ''}
         <button class="btn btn-ghost" id="ov-review">感想戦(手の評価)</button>
