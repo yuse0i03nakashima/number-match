@@ -136,11 +136,11 @@ export class Renderer {
     const run = game.run, st = game.stage, def = game.stageDef;
     if (!run || !st || !def) return;
     this.$('hud-stage-label').textContent = `STAGE ${String(def.stage).padStart(2, '0')}`;
-    this.$('hud-world-label').textContent = `world ${game.worldOf(run.stageIndex) + 1} · ${def.cellsCount} cells${game.classic ? ' · classic' : ''}`;
+    this.$('hud-world-label').textContent = game.cfg.vsMode ? `vs · ${def.cellsCount} cells` : `world ${game.worldOf(run.stageIndex) + 1} · ${def.cellsCount} cells${game.classic ? ' · classic' : ''}`;
     this.$('hud-score').textContent = run.score.toLocaleString('en-US');
     // CLASSIC に Chain・Heart は無い
     this.$('hud-chain').hidden = game.classic;
-    this.$('hud-lives').hidden = game.classic;
+    this.$('hud-lives').hidden = game.classic || !!game.cfg.vsMode;
     this.$('hud-mult').textContent = `×${game.multiplier.toFixed(1)}`;
     this.$('hud-chain-fill').style.width = `${Math.round(game.heat * 100)}%`;
     this.setHeat(game.heat);
@@ -229,6 +229,11 @@ export class Renderer {
       btn.classList.remove('ctl-danger'); btn.classList.add('ctl-primary', 'buy');
       label.textContent = 'BUY ADD';
       sub.textContent = `${shop.price.toLocaleString('en-US')} coin · GIVE UP はメニュー`;
+    } else if (left <= 0 && game && game.cfg.vsMode) {
+      // VS: Add が尽きたら得点を確定して終わる
+      btn.classList.remove('ctl-primary'); btn.classList.add('ctl-danger');
+      label.textContent = 'FINISH';
+      sub.textContent = '得点を確定して終了';
     } else if (left <= 0) {
       btn.classList.remove('ctl-primary'); btn.classList.add('ctl-danger');
       label.textContent = 'GIVE UP';

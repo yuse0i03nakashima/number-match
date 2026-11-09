@@ -50,7 +50,33 @@ const HOOK = [
   [112, 2, 1], [113, 4, 1], [114, 6, 2], [116, 9, 2], [118, 12, 2], [120, 9, 2], [122, 6, 4],
 ];
 
+// R 参考曲の書き起こし: DungeonSlasher の広告に使われている曲の 15 秒を解析して、聞き取れた範囲で置いたもの(確認用。そのまま本番には使わない)。
+//   聞き取り(C メジャーで書くと): 1 小節のフック「ソソファ(ド)ミミレ | ミミレ ドド」。奇数小節は後半が「ミミ シシ ド シシ」と上がる。
+//   4 小節目は「ドド レ ミミ ファ | ファファ ファー」の上り坂。四つ打ち、2・4 拍のクラップ、裏拍のオープンハット、
+//   和音は vi7 → V → iii7 → IVmaj7 の 4 小節ループ、BPM 約 144、リードはのこぎり波を重ねた音(倍音比 0.77 / 0.52 / 0.36)。
+function cmHook(b) {
+  return [[b + 1, 7, 1], [b + 2, 7, 1], [b + 3, 5, 1], [b + 5, 4, 1], [b + 6, 4, 1], [b + 7, 2, 1], [b + 9, 4, 1], [b + 10, 4, 1], [b + 11, 2, 1], [b + 12, 0, 1], [b + 13, 0, 2]];
+}
+function cmRise(b) {
+  return [[b + 1, 7, 1], [b + 2, 7, 1], [b + 3, 5, 1], [b + 4, 0, 1], [b + 5, 4, 1], [b + 6, 4, 1], [b + 7, 2, 1], [b + 9, 4, 1], [b + 10, 4, 1], [b + 11, 11, 1], [b + 12, 11, 1], [b + 13, 12, 1], [b + 14, 11, 1], [b + 15, 11, 1]];
+}
+function cmBuild(b) {
+  return [[b + 1, 0, 1], [b + 2, 0, 1], [b + 3, 2, 1], [b + 5, 4, 1], [b + 6, 4, 1], [b + 7, 5, 1], [b + 9, 5, 1], [b + 10, 5, 1], [b + 11, 5, 2], [b + 15, 0, 1]];
+}
+function cmEnd(b) {
+  return [[b, 2, 1], [b + 1, 7, 1], [b + 2, 5, 1], [b + 4, 4, 1], [b + 5, 4, 1], [b + 6, 2, 1], [b + 9, 16, 1], [b + 12, 0, 1], [b + 13, 0, 2]];
+}
+const CM = [...cmHook(0), ...cmRise(16), ...cmHook(32), ...cmBuild(48), ...cmHook(64), ...cmRise(80), ...cmHook(96), ...cmEnd(112)];
+const CM_PROGRESSION = [
+  { degree: 9, kind: 'm7' },     // vi7
+  { degree: 7, kind: 'maj' },    // V
+  { degree: 4, kind: 'm7' },     // iii7
+  { degree: 5, kind: 'maj7' },   // IVmaj7
+  { degree: 9, kind: 'm7' }, { degree: 7, kind: 'maj' }, { degree: 4, kind: 'm7' }, { degree: 5, kind: 'maj7' },
+];
+
 export const SWEET_MELODIES = {
+  cm: { name: 'R 参考曲', desc: '広告の曲の 15 秒を書き起こしたもの(確認用)。vi7 → V → iii7 → IVmaj7、BPM 144、のこぎり波のリード、裏拍のオープンハット', notes: CM, progression: CM_PROGRESSION, bpm: 144, style: { lead: 'supersaw', hatOff: true } },
   vocal: { name: 'A 歌メロ', desc: '3 度ずつ跳んで 9 度に触れ、短短長で下りる。2 小節目は切ない音を長く', notes: VOCAL },
   anthem: { name: 'B アンセム', desc: 'タ・タ・ターンを 2 回。2 小節の問いと 2 小節の答え', notes: ANTHEM },
   riff: { name: 'C リフ', desc: '3 音の上がるモチーフを 5 つおきに置いて拍とずらす。てっぺんは共通', notes: RIFF },

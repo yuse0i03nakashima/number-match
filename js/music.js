@@ -65,8 +65,8 @@ const SWEET_PROGRESSION = [
   { degree: 2, kind: '7' },      // II7    (V7/ii。ここも切ない)
 ];
 const SWEET_INTERVALS = { maj7: [0, 4, 7, 11], maj: [0, 4, 7, 12], m7: [0, 3, 7, 10], '7': [0, 4, 7, 10] };
-function buildSweetChords(tonic) {
-  return SWEET_PROGRESSION.map(({ degree, kind }) => {
+function buildSweetChords(tonic, progression = SWEET_PROGRESSION) {
+  return progression.map(({ degree, kind }) => {
     const root = tonic - 12 + degree;
     return { root, notes: SWEET_INTERVALS[kind].map((i) => root + i) };
   });
@@ -89,6 +89,8 @@ export class Music {
     this.pendingSong = null;
     this.sweetBpm = cfg.sweetBpm ?? 150;
     this.sweetMelody = cfg.sweetMelody ?? SWEET_MELODIES[DEFAULT_SWEET_MELODY].notes;
+    this.sweetProgression = cfg.sweetProgression ?? SWEET_PROGRESSION;   // 候補ごとに進行を変えられる(lab)
+    this.sweetStyle = cfg.sweetStyle ?? { lead: 'soft', hatOff: false };  // 旋律の音色とハットの置き方
     this.melodyOnly = false;            // lab 用: 旋律だけ鳴らす
     this.chords = buildChords(this.tonic);
     this.penta = buildPenta(this.tonic);
@@ -205,6 +207,8 @@ export class Music {
     this.applySong(name);
   }
   setSweetMelody(notes) { this.sweetMelody = notes; }
+  setSweetProgression(p) { this.sweetProgression = p ?? SWEET_PROGRESSION; if (this.song === 'sweet') this.chords = buildSweetChords(this.tonic, this.sweetProgression); }
+  setSweetStyle(st) { this.sweetStyle = { lead: 'soft', hatOff: false, ...(st ?? {}) }; }
   bpmFor(song) {
     if (this.calm) return this.calm.bpm;
     return song === 'sweet' ? this.sweetBpm : (this.cfg.bpm ?? 124);
@@ -212,7 +216,7 @@ export class Music {
   applySong(name) {
     this.song = name;
     this.pendingSong = null;
-    this.chords = name === 'sweet' ? buildSweetChords(this.tonic) : buildChords(this.tonic);
+    this.chords = name === 'sweet' ? buildSweetChords(this.tonic, this.sweetProgression) : buildChords(this.tonic);
     this.pendingBpm = this.bpmFor(name);
     if (!this.playing) { this.bpm = this.pendingBpm; this.stepSec = 60 / this.bpm / 4; this.pendingBpm = null; }
     if (this.ctx) { const h = this.heat; this.heat = -1; this.setHeat(h); }
@@ -280,7 +284,8 @@ export class Music {
     if (s % 4 === 0) this.kick(t);
     if (s === 4 || s === 12) this.snare(t);
     const roll = L >= 3 && bar % 2 === 1 && s >= 13;
-    if (s % 2 === 0 || roll || wild) this.hat(t, roll ? 0.07 : s % 4 === 2 ? 0.1 : 0.06, s === 14 && !roll);
+    if (this.sweetStyle.hatOff && !roll && !wild) { if (s % 4 === 2) this.hat(t, 0.11, true); }
+    else if (s % 2 === 0 || roll || wild) this.hat(t, roll ? 0.07 : s % 4 === 2 ? 0.1 : 0.06, s === 14 && !roll);
 
     // 808 風のベース: 音の頭で上から滑り込む
     const bassAt = { 0: 6, 6: 2, 8: 4, 12: 2, 14: 2 };
@@ -304,9 +309,14 @@ export class Music {
         const m = this.tonic + 12 + note[1];
         const dur = this.stepSec * note[2] * 0.9;
         const rel = Math.min(0.12, dur * 0.35);
-        this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: -8, dur, gain: 0.075, attack: 0.004, release: rel, cutoff: 3000, toDelay: true });
-        this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: 8, dur, gain: 0.075, attack: 0.004, release: rel, cutoff: 3000 });
-        this.tone({ t, freq: mtof(m), type: 'triangle', dur, gain: 0.1, attack: 0.004, release: rel, cutoff: 5000 });
+        if (this.sweetStyle.lead === 'supersaw') {
+          // 参考曲風: のこぎり波 4 本を ±18 / ±6 cent にずらして重ねる。明るく、刻みが立つ
+          for (const det of [-18, -6, 6, 18]) this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: det, dur, gain: 0.055, attack: 0.003, release: rel, cutoff: 4500, toDelay: det === 6 });
+        } else {
+          this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: -8, dur, gain: 0.075, attack: 0.004, release: rel, cutoff: 3000, toDelay: true });
+          this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: 8, dur, gain: 0.075, attack: 0.004, release: rel, cutoff: 3000 });
+          this.tone({ t, freq: mtof(m), type: 'triangle', dur, gain: 0.1, attack: 0.004, release: rel, cutoff: 5000 });
+        }
         if (L >= 4) this.tone({ t, freq: mtof(m - 12), type: 'square', dur, gain: 0.05, attack: 0.006, release: rel, cutoff: 2500 });   // 1 オクターブ下を重ねて太く
       }
     }

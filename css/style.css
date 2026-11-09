@@ -596,3 +596,31 @@ body.fever .reel { animation:fever-cell 1.2s ease-in-out infinite alternate; }
 }
 body.skill .board-wrap { box-shadow:inset 0 0 40px rgba(240,98,146,0.25); }
 body.skill .cell:not(.empty) { border-color:rgba(240,98,146,0.6); }
+
+/* ---------- VS(2 台で同じ Board) ---------- */
+.vsbar { display:flex; align-items:center; gap:10px; padding:6px 12px; margin:0 12px 6px; background:var(--surface2); border:1px solid var(--border); font-family:var(--font-mono); font-size:12px; }
+.vsbar[hidden] { display:none; }
+.vs-time { font-size:18px; font-weight:500; letter-spacing:1px; min-width:52px; font-variant-numeric:tabular-nums; }
+.vs-time.low { color:var(--red); animation:vs-blink 0.6s steps(2) infinite; }
+@keyframes vs-blink { to { opacity:0.45; } }
+.vs-rival { display:flex; align-items:baseline; gap:8px; }
+.vs-name { font-size:10px; letter-spacing:3px; color:var(--text-dim); }
+.vs-rscore { font-size:16px; font-variant-numeric:tabular-nums; }
+.vs-rmult { font-size:11px; color:var(--text-muted); }
+.vs-prog { flex:1; height:4px; background:var(--surface3); overflow:hidden; }
+.vs-prog-fill { display:block; height:100%; width:0; background:linear-gradient(90deg, var(--blue), var(--purple)); transition:width 0.3s linear; }
+.vs-rstate { font-size:10px; letter-spacing:2px; color:var(--text-dim); white-space:nowrap; }
+.vs-rstate.done { color:var(--green); }
+.vs-rstate.gone { color:var(--red); }
+.card .code { font-family:var(--font-mono); font-size:40px; letter-spacing:12px; text-align:center; margin:14px 0 4px; padding:10px 0 10px 12px; border:1px dashed var(--border); user-select:all; }
+.card .code-input { display:flex; gap:8px; margin:12px 0; }
+.card .code-input input { flex:1; font-family:var(--font-mono); font-size:24px; letter-spacing:8px; text-transform:uppercase; text-align:center; padding:8px; background:var(--surface2); color:var(--text); border:1px solid var(--border); }
+.card .opts { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+.card .opts .chip.on { border-color:var(--amber); color:var(--amber); }
+.card .count { font-family:var(--font-mono); font-size:96px; text-align:center; line-height:1.1; letter-spacing:4px; }
+.card .vs-scores { display:flex; justify-content:space-around; align-items:flex-end; margin:16px 0 4px; }
+.card .vs-scores .side { text-align:center; }
+.card .vs-scores .who { font-family:var(--font-mono); font-size:10px; letter-spacing:3px; color:var(--text-dim); }
+.card .vs-scores .pts { font-family:var(--font-mono); font-size:30px; font-variant-numeric:tabular-nums; }
+.card .vs-scores .side.win .pts { color:var(--amber); text-shadow:0 0 18px rgba(245,166,35,0.6); }
+.card h1.vs-win { color:var(--amber); } .card h1.vs-lose { color:var(--text-muted); }

@@ -11,7 +11,8 @@ let current = DEFAULT_SWEET_MELODY;
 function heatFor(layers) { return [0, 0, 0.25, 0.5, 0.75][layers] ?? 0; }
 
 function makeMusic() {
-  const m = new Music({ volume: CONFIG.bgm.synthVolume, tonic: Number($('key').value), bpm: CONFIG.bgm.bpm, sweetBpm: Number($('bpm').value), sweetMelody: SWEET_MELODIES[current].notes });
+  const cand = SWEET_MELODIES[current];
+  const m = new Music({ volume: CONFIG.bgm.synthVolume, tonic: Number($('key').value), bpm: CONFIG.bgm.bpm, sweetBpm: Number($('bpm').value), sweetMelody: cand.notes, sweetProgression: cand.progression, sweetStyle: cand.style });
   m.attach(ctx);
   m.setSong('sweet');
   m.setHeat(heatFor(Number($('layers').value)));
@@ -47,7 +48,11 @@ for (const [key, m] of Object.entries(SWEET_MELODIES)) {
     current = key;
     for (const x of $('melodies').children) x.classList.toggle('on', x.dataset.key === key);
     showNotes();
-    if (music) music.setSweetMelody(m.notes);
+    if (m.bpm) { $('bpm').value = m.bpm; $('bpmv').textContent = m.bpm; }
+    if (music) {
+      music.setSweetMelody(m.notes); music.setSweetProgression(m.progression); music.setSweetStyle(m.style);
+      music.sweetBpm = Number($('bpm').value); music.pendingBpm = music.bpmFor('sweet');
+    }
   });
   if (key === current) b.classList.add('on');
   $('melodies').appendChild(b);
