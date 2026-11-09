@@ -64,12 +64,14 @@ const SWEET_PROGRESSION = [
   { degree: 4, kind: 'm7' },     // iii7
   { degree: 2, kind: '7' },      // II7    (V7/ii。ここも切ない)
 ];
-const SWEET_INTERVALS = { maj7: [0, 4, 7, 11], maj: [0, 4, 7, 12], m7: [0, 3, 7, 10], '7': [0, 4, 7, 10] };
+const SWEET_INTERVALS = { maj7: [0, 4, 7, 11], maj: [0, 4, 7, 12], min: [0, 3, 7, 12], m7: [0, 3, 7, 10], '7': [0, 4, 7, 10] };
 function buildSweetChords(tonic, progression = SWEET_PROGRESSION) {
-  return progression.map(({ degree, kind }) => {
+  const one = ({ degree, kind }) => {
     const root = tonic - 12 + degree;
     return { root, notes: SWEET_INTERVALS[kind].map((i) => root + i) };
-  });
+  };
+  // half があれば小節の後半だけ別の和音(参考曲の Am → G のような半小節の動き)
+  return progression.map((p) => ({ ...one(p), half: p.half ? one(p.half) : null }));
 }
 // 旋律の表は melodies.js(候補を lab.html で聴き比べる)。Music は cfg.sweetMelody か setSweetMelody で受け取る
 // やわらかい歪み(tanh)。808 風ベースの倍音用
@@ -91,6 +93,7 @@ export class Music {
     this.sweetMelody = cfg.sweetMelody ?? SWEET_MELODIES[DEFAULT_SWEET_MELODY].notes;
     this.sweetProgression = cfg.sweetProgression ?? SWEET_PROGRESSION;   // 候補ごとに進行を変えられる(lab)
     this.sweetStyle = cfg.sweetStyle ?? { lead: 'soft', hatOff: false };  // 旋律の音色とハットの置き方
+    this.sweetTonic = cfg.sweetTonic ?? null;   // sweet だけ別の調にするとき(null なら tonic と同じ)
     this.melodyOnly = false;            // lab 用: 旋律だけ鳴らす
     this.chords = buildChords(this.tonic);
     this.penta = buildPenta(this.tonic);
@@ -207,8 +210,10 @@ export class Music {
     this.applySong(name);
   }
   setSweetMelody(notes) { this.sweetMelody = notes; }
-  setSweetProgression(p) { this.sweetProgression = p ?? SWEET_PROGRESSION; if (this.song === 'sweet') this.chords = buildSweetChords(this.tonic, this.sweetProgression); }
+  setSweetProgression(p) { this.sweetProgression = p ?? SWEET_PROGRESSION; if (this.song === 'sweet') this.chords = buildSweetChords(this.tonicFor('sweet'), this.sweetProgression); }
   setSweetStyle(st) { this.sweetStyle = { lead: 'soft', hatOff: false, ...(st ?? {}) }; }
+  setSweetTonic(t) { this.sweetTonic = t ?? null; if (this.song === 'sweet') this.chords = buildSweetChords(this.tonicFor('sweet'), this.sweetProgression); }
+  tonicFor(song) { return song === 'sweet' && this.sweetTonic != null ? this.sweetTonic : this.tonic; }
   bpmFor(song) {
     if (this.calm) return this.calm.bpm;
     return song === 'sweet' ? this.sweetBpm : (this.cfg.bpm ?? 124);
@@ -216,7 +221,7 @@ export class Music {
   applySong(name) {
     this.song = name;
     this.pendingSong = null;
-    this.chords = name === 'sweet' ? buildSweetChords(this.tonic, this.sweetProgression) : buildChords(this.tonic);
+    this.chords = name === 'sweet' ? buildSweetChords(this.tonicFor('sweet'), this.sweetProgression) : buildChords(this.tonic);
     this.pendingBpm = this.bpmFor(name);
     if (!this.playing) { this.bpm = this.pendingBpm; this.stepSec = 60 / this.bpm / 4; this.pendingBpm = null; }
     if (this.ctx) { const h = this.heat; this.heat = -1; this.setHeat(h); }
@@ -251,6 +256,8 @@ export class Music {
   }
 
   chordAt(bar) { return this.chords[bar % this.chords.length]; }
+  /** 16 分 s の時点の和音(後半で替わる和音に対応) */
+  chordAtStep(bar, s) { const c = this.chordAt(bar); return c.half && s >= STEPS_PER_BAR / 2 ? c.half : c; }
 
   playBar(t, bar) { if (this.song === 'sweet') this.playBarSweet(t, bar); else this.playBarDance(t, bar); }
   playStep(t, bar, s) { if (this.song === 'sweet') this.playStepSweet(t, bar, s); else this.playStepDance(t, bar, s); }
@@ -260,9 +267,12 @@ export class Music {
     if (this.melodyOnly) return;
     const chord = this.chordAt(bar);
     const barLen = this.stepSec * STEPS_PER_BAR;
-    for (const m of chord.notes) {
-      for (const det of [-6, 6]) {
-        this.tone({ t, freq: mtof(m + 12), type: 'triangle', detune: det, dur: barLen * 1.02, gain: 0.028, attack: 0.3, release: 0.5, cutoff: 2800 });
+    const parts = chord.half ? [[chord, t, barLen / 2], [chord.half, t + barLen / 2, barLen / 2]] : [[chord, t, barLen]];
+    for (const [c, t0, len] of parts) {
+      for (const m of c.notes) {
+        for (const det of [-6, 6]) {
+          this.tone({ t: t0, freq: mtof(m + 12), type: 'triangle', detune: det, dur: len * 1.02, gain: 0.028, attack: chord.half ? 0.12 : 0.3, release: 0.5, cutoff: 2800 });
+        }
       }
     }
     if (this.fever && !(this.calm && this.calm.feverCalm)) {
@@ -274,7 +284,7 @@ export class Music {
   }
 
   playStepSweet(t, bar, s) {
-    const chord = this.chordAt(bar);
+    const chord = this.chordAtStep(bar, s);
     const L = this.layers;
     const v = chord.notes;
     const wild = this.fever && !(this.calm && this.calm.feverCalm);
@@ -306,7 +316,7 @@ export class Music {
       const pos = (bar * STEPS_PER_BAR + s) % SWEET_MELODY_LEN;
       const note = this.sweetMelody.find((n) => n[0] === pos);
       if (note) {
-        const m = this.tonic + 12 + note[1];
+        const m = this.tonicFor('sweet') + 12 + note[1];
         const dur = this.stepSec * note[2] * 0.9;
         const rel = Math.min(0.12, dur * 0.35);
         if (this.sweetStyle.lead === 'supersaw') {
@@ -317,7 +327,8 @@ export class Music {
           this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: 8, dur, gain: 0.075, attack: 0.004, release: rel, cutoff: 3000 });
           this.tone({ t, freq: mtof(m), type: 'triangle', dur, gain: 0.1, attack: 0.004, release: rel, cutoff: 5000 });
         }
-        if (L >= 4) this.tone({ t, freq: mtof(m - 12), type: 'square', dur, gain: 0.05, attack: 0.006, release: rel, cutoff: 2500 });   // 1 オクターブ下を重ねて太く
+        if (this.sweetStyle.octaveDown) this.tone({ t, freq: mtof(m - 12), type: 'sawtooth', dur, gain: 0.05, attack: 0.004, release: rel, cutoff: 2600 });   // 参考曲風: 常に 1 オクターブ下を重ねる
+        else if (L >= 4) this.tone({ t, freq: mtof(m - 12), type: 'square', dur, gain: 0.05, attack: 0.006, release: rel, cutoff: 2500 });   // 1 オクターブ下を重ねて太く
       }
     }
     // 高いベル(層 3〜): 16 分の 1・5・9・13 に和音の音を上から順に
