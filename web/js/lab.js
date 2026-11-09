@@ -61,6 +61,7 @@ for (const [key, m] of Object.entries(SWEET_MELODIES)) {
   $('melodies').appendChild(b);
 }
 showNotes();
+if (SWEET_MELODIES[current].bpm) { $('bpm').value = SWEET_MELODIES[current].bpm; $('bpmv').textContent = SWEET_MELODIES[current].bpm; }   // 既定の候補のテンポを最初から表示に反映
 
 $('start').addEventListener('click', start);
 $('stop').addEventListener('click', () => { if (music) music.stop(0.3); });
