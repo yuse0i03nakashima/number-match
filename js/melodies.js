@@ -87,12 +87,48 @@ const CM_LOOP_PROGRESSION = [
 const CM_PROGRESSION = [{ degree: 9, kind: 'min' }, ...CM_LOOP_PROGRESSION, ...CM_LOOP_PROGRESSION];
 const CM_STYLE = { lead: 'cm', hatOff: true, octaveDown: true, clap: true, pump: true, stabs: false, bass: 'eighths', kick: 'tight', padGain: 0.04 };
 
+// S 自作(R を土台に): 進行(vi → V | iii7 | vi | IVmaj7)、BPM 帯、8 分中心で長い音を混ぜる拍の性格、小節の終わりで高い音へ跳ぶ作りは R から借り、旋律の形は別物。
+//   フック(1・5 小節目): ミ ミレ ド レ ミー ソ ラー …3 度から下りて戻り、6 度へ跳んで伸ばす(2 拍目裏の V の上では 9 度の響き)
+//   2 小節目(iii7): ソ ラソ ミ レ ミー レ ド   …フックの答え。主音へ下りる
+//   3 小節目(vi): ラ(低) ド レ ミ ソー ミ レ  …上り坂(R の 3 小節目と同じ役目。音は別)
+//   4 小節目(IVmaj7): ミー レ ドー ラ(低)ーー シ ド …長 7 度のラで止まり、シ ドで 5 小節目へ
+//   6 小節目(iii7): ラ ソ ミ レ ミー ソ ラ   …2 回目はフックの頂点から下り始める
+//   7 小節目(IVmaj7): ド レ ミ ファ ソー ラ ソ …上り坂の 2 回目は IVmaj7 の上で
+//   8 小節目(V): ソ ファレ シ(低) レー シ(低) レ ミ …V の 3 度(シ)で切なく、レ ミで 1 小節目へ戻る
+//   音域 -5〜9(ド = 主音の 1 オクターブ上。THE TEN は E5 基準)。前に不快と言われた 12 以上は使わない。
+function hookBarS(b) {
+  return [[b, 4, 2], [b + 2, 4, 1], [b + 3, 2, 1], [b + 4, 0, 2], [b + 6, 2, 2], [b + 8, 4, 3], [b + 11, 7, 1], [b + 12, 9, 4]];
+}
+const OURS = [
+  ...hookBarS(0),
+  [16, 7, 2], [18, 9, 1], [19, 7, 1], [20, 4, 2], [22, 2, 2], [24, 4, 3], [28, 2, 2], [30, 0, 2],
+  [32, -3, 2], [34, 0, 2], [36, 2, 2], [38, 4, 2], [40, 7, 3], [44, 4, 2], [46, 2, 2],
+  [48, 4, 3], [52, 2, 2], [54, 0, 2], [56, -3, 6], [62, -1, 1], [63, 0, 1],
+  ...hookBarS(64),
+  [80, 9, 2], [82, 7, 1], [83, 4, 1], [84, 2, 2], [86, 4, 3], [90, 7, 1], [92, 9, 4],
+  [96, 0, 2], [98, 2, 2], [100, 4, 2], [102, 5, 2], [104, 7, 3], [108, 9, 2], [110, 7, 2],
+  [112, 7, 2], [114, 5, 1], [115, 2, 1], [116, -1, 2], [118, 2, 3], [122, -1, 2], [124, 2, 2], [126, 4, 2],
+];
+const OURS_PROGRESSION = [
+  { degree: 9, kind: 'min', half: { degree: 7, kind: 'maj' } },   // vi → V
+  { degree: 4, kind: 'm7' },                                       // iii7
+  { degree: 9, kind: 'min' },                                      // vi
+  { degree: 5, kind: 'maj7' },                                     // IVmaj7
+  { degree: 9, kind: 'min', half: { degree: 7, kind: 'maj' } },   // vi → V
+  { degree: 4, kind: 'm7' },                                       // iii7
+  { degree: 5, kind: 'maj7' },                                     // IVmaj7
+  { degree: 7, kind: 'maj' },                                      // V(ここだけ 1 小節。1 小節目の vi へ戻る)
+];
+// 音色は R の測定値を土台に、少し明るく電子的に(ユーザー「原曲はもう少し高い電子音っぽい」)
+const OURS_STYLE = { lead: 'bright', hatOff: true, octaveDown: true, clap: true, pump: true, stabs: false, bass: 'eighths', kick: 'tight', padGain: 0.04 };
+
 export const SWEET_MELODIES = {
   cm: { name: 'R 参考曲', desc: '広告の曲の 15 秒を画像で読んだ書き起こし(確認用)。冒頭 1 小節 + Am → G | Em7 | Am | Fmaj7 の 4 小節ループ × 2、BPM 144、調 C。測定した音色(軽いユニゾンのリード + 上下のオクターブ、短いキック、クラップ、8 分のベース、サイドチェイン)', notes: CM, length: CM_LEN, progression: CM_PROGRESSION, bpm: 144, tonic: 60, style: CM_STYLE },
   vocal: { name: 'A 歌メロ', desc: '3 度ずつ跳んで 9 度に触れ、短短長で下りる。2 小節目は切ない音を長く', notes: VOCAL },
   anthem: { name: 'B アンセム', desc: 'タ・タ・ターンを 2 回。2 小節の問いと 2 小節の答え', notes: ANTHEM },
   riff: { name: 'C リフ', desc: '3 音の上がるモチーフを 5 つおきに置いて拍とずらす。てっぺんは共通', notes: RIFF },
   hook: { name: 'D フック', desc: '参考曲の作り(5 度から主音へ下る、16 分 2 つの刻み)をそのまま', notes: HOOK },
+  ours: { name: 'S 自作(R ベース)', desc: 'R の進行・テンポ・拍の性格・音色を土台に旋律を自作。フック「ミ ミレ ド レ ミー ソ ラー」、調は THE TEN の E、BPM 148、明るめの電子音', notes: OURS, progression: OURS_PROGRESSION, bpm: 148, style: OURS_STYLE },
 };
-export const DEFAULT_SWEET_MELODY = 'vocal';
+export const DEFAULT_SWEET_MELODY = 'ours';
 export const SWEET_MELODY_LEN = 8 * 16;

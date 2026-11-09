@@ -83,7 +83,7 @@ export const CONFIG = {
     bpm: 124,                        // 生成 BGM のテンポ(1 曲目 dance)
     sweetBpm: 150,                   // 2 曲目 sweet のテンポ(参考 2 曲は 128 と 145。ユーザー希望でより速く)
     songs: ['dance', 'sweet'],       // Stage ごとに順に使う曲。Stage 1 = dance、Stage 2 = sweet、Stage 3 = dance、…
-    sweetMelody: 'vocal',            // sweet の旋律(melodies.js の候補名。lab.html で聴き比べる)
+    sweetMelody: 'ours',             // sweet の旋律(melodies.js の候補名。lab.html で聴き比べる)。ours = R(参考曲)を土台にした自作
   },
   // VS: 2 台のスマホで同じ Board を同時に遊び、得点を競う(通信は vs.js)
   vs: {
