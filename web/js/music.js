@@ -330,7 +330,13 @@ export class Music {
         const m = this.tonicFor('sweet') + 12 + note[1];
         const dur = this.stepSec * note[2] * 0.9;
         const rel = Math.min(0.12, dur * 0.35);
-        if (this.sweetStyle.lead === 'cm') {
+        if (this.sweetStyle.lead === 'bright') {
+          // S 用: cm より明るく電子的に。のこぎり波 3 本(±10 cent、cutoff 9000)+ オクターブ上 + 同じ高さの矩形波を薄く
+          const d2 = this.stepSec * note[2] * 0.97, r2 = 0.06;
+          for (const det of [-10, 0, 10]) this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: det, dur: d2, gain: 0.048, attack: 0.025, release: r2, cutoff: 9000, toDelay: det === 0 });
+          this.tone({ t, freq: mtof(m + 12), type: 'sawtooth', dur: d2, gain: 0.024, attack: 0.025, release: r2, cutoff: 10000 });
+          this.tone({ t, freq: mtof(m), type: 'square', detune: 4, dur: d2, gain: 0.018, attack: 0.025, release: r2, cutoff: 5000 });
+        } else if (this.sweetStyle.lead === 'cm') {
           // 測定に合わせた音: のこぎり波 3 本(±8 cent)、立ち上がり 40 ms、次の音の直前まで伸ばす。1 オクターブ上を -8 dB で重ねる(下は octaveDown)
           const d2 = this.stepSec * note[2] * 0.97, r2 = 0.06;
           for (const det of [-8, 0, 8]) this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: det, dur: d2, gain: 0.05, attack: 0.04, release: r2, cutoff: 6000, toDelay: det === 0 });
