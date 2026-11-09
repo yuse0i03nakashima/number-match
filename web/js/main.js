@@ -3,6 +3,7 @@
 // 時間 → game.tick() を 200ms ごとに呼び、Chain ゲージと FEVER を進める。
 
 import { CONFIG } from './config.js';
+import { VsLink, makeCode, normalizeCode, pickBoard, makeSetup, stageDefFrom } from './vs.js';
 import { SWEET_MELODIES } from './melodies.js';
 import { Game } from './game.js';
 import { Renderer } from './render.js';
@@ -21,7 +22,8 @@ async function boot() {
   const res = await fetch('levels/stages.json');
   const stages = await res.json();
 
-  const game = new Game(stages, CONFIG);
+  let game = new Game(stages, CONFIG);      // VS 中は VS 用の Game に差し替える(mainGame に戻す)
+  const mainGame = game;
   const ui = new Renderer(document);
   const fx = new FX(document.getElementById('fx'), CONFIG.fx);
   const sound = new Sound(CONFIG.audio.masterVolume);
@@ -146,6 +148,7 @@ async function boot() {
   setInterval(() => {
     // BGM: Stage 中は Chain の熱と FEVER に合わせ、Title では止める。オーバーレイ中は小さく
     if (slotActive) { bgm.setSong('dance'); bgm.setHeat(slot.bonus ? 0.85 : 0.3); bgm.setFever(!!slot.bonus); bgm.play(); bgm.duck(overlayOpen()); if (slot.bonus && !overlayOpen()) fx.embers(4); return; }
+    if (vs.active) vsTick();
     if (game.stage?.status === 'play' || game.stage?.status === 'clear') { bgm.setHeat(game.heat); bgm.setFever(game.inFever); bgm.play(); }
     else if (titleShown) bgm.stop();
     bgm.duck(overlayOpen());
@@ -319,9 +322,9 @@ async function boot() {
           }
           break;
         }
-        case 'stageClear': await onStageClear(ev); break;
-        case 'stageFailed': await onStageFailed(ev); break;
-        case 'runOver': await onRunOver(ev); break;
+        case 'stageClear': if (vs.playing) await onVsClear(ev); else await onStageClear(ev); break;
+        case 'stageFailed': if (vs.playing) vsFinish('stuck'); else await onStageFailed(ev); break;
+        case 'runOver': if (vs.playing) vsFinish('stuck'); else await onRunOver(ev); break;
         case 'complete': showComplete(ev); break;
         default: break;
       }
@@ -683,7 +686,9 @@ async function boot() {
     busy = false; titleShown = true;
     if (slotActive) leaveSlot();
     try { localStorage.setItem('numbermatch.tab', titleTab); } catch { /* 無視 */ }
+    if (vs.active) leaveVs();
     if (titleTab === 'slot') { showSlotTitle(); return; }
+    if (titleTab === 'vs') { showVsTitle(); return; }
     const canResume = game.run && game.stage && (game.stage.status === 'play' || game.stage.status === 'clear' || game.stage.status === 'failed');
     const worlds = [];
     const total = Math.ceil(stages.length / CONFIG.worldSize);
@@ -741,6 +746,7 @@ async function boot() {
         <button class="mode-tab ${on('normal')}" data-tab="normal" role="tab">NORMAL</button>
         <button class="mode-tab ${on('classic')}" data-tab="classic" role="tab">CLASSIC</button>
         <button class="mode-tab ${on('slot')}" data-tab="slot" role="tab">SLOT</button>
+        <button class="mode-tab ${on('vs')}" data-tab="vs" role="tab">VS</button>
       </div>`;
   }
   function bindTabs(card) {
@@ -748,7 +754,7 @@ async function boot() {
       const t = b.dataset.tab;
       if (t === titleTab) return;
       titleTab = t;
-      if (t !== 'slot') { game.setMode(t); applyMode(); }
+      if (t !== 'slot' && t !== 'vs') { game.setMode(t); applyMode(); }
       showTitle();
     }));
   }
@@ -841,12 +847,12 @@ async function boot() {
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
-        <div class="ja">MODE: ${game.classic ? 'CLASSIC' : 'NORMAL'}(Title で切り替え) · Coin ${fmt(game.coins)}</div>
-        ${inPlay ? game.skillItems().map((e) => `<button class="btn btn-ghost" data-skill="${e.skill}" ${e.can ? '' : 'disabled'}>${e.skill === 'line' ? 'LINE BREAK' : 'SNIPE SHOT'}<small>　${fmt(e.price)} coin · ${e.skill === 'line' ? '1 行を丸ごと消す' : '位置に関係なく Pair を 1 組消す'}</small></button>`).join('') : ''}
-        ${inPlay && game.shopPrices.heart ? `<button class="btn btn-ghost" id="ov-buy-heart" ${game.shopItems().find((e) => e.item === 'heart')?.can ? '' : 'disabled'}>BUY HEART<small>　${fmt(game.shopPrices.heart)} coin · Heart ${game.run.lives}/${CONFIG.lives.max}</small></button>` : ''}
+        <div class="ja">${vs.active ? `VS · 合言葉 ${vs.code}` : `MODE: ${game.classic ? 'CLASSIC' : 'NORMAL'}(Title で切り替え) · Coin ${fmt(game.coins)}`}</div>
+        ${inPlay && !vs.active ? game.skillItems().map((e) => `<button class="btn btn-ghost" data-skill="${e.skill}" ${e.can ? '' : 'disabled'}>${e.skill === 'line' ? 'LINE BREAK' : 'SNIPE SHOT'}<small>　${fmt(e.price)} coin · ${e.skill === 'line' ? '1 行を丸ごと消す' : '位置に関係なく Pair を 1 組消す'}</small></button>`).join('') : ''}
+        ${inPlay && !vs.active && game.shopPrices.heart ? `<button class="btn btn-ghost" id="ov-buy-heart" ${game.shopItems().find((e) => e.item === 'heart')?.can ? '' : 'disabled'}>BUY HEART<small>　${fmt(game.shopPrices.heart)} coin · Heart ${game.run.lives}/${CONFIG.lives.max}</small></button>` : ''}
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
-        ${inPlay ? `<button class="btn btn-danger" id="ov-giveup">GIVE UP(${game.classic ? '得点は半分残る' : 'Heart −1 · 得点は半分残る'})</button>` : ''}
+        ${inPlay ? (vs.active ? '<button class="btn btn-danger" id="ov-giveup">FINISH(得点を確定して終了)</button>' : `<button class="btn btn-danger" id="ov-giveup">GIVE UP(${game.classic ? '得点は半分残る' : 'Heart −1 · 得点は半分残る'})</button>`) : ''}
       </div>`);
     card.querySelector('#ov-back').onclick = () => { game.resume(Date.now()); ui.hideOverlay(); };
     card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showMenu(); };
@@ -856,7 +862,290 @@ async function boot() {
     card.querySelector('#ov-title').onclick = showTitle;
     card.querySelector('#ov-buy-heart')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.buy('heart')); });
     card.querySelectorAll('[data-skill]').forEach((b) => b.addEventListener('click', () => { ui.hideOverlay(); handle(game.armSkill(b.dataset.skill)); }));
-    card.querySelector('#ov-giveup')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.giveUp()); });
+    card.querySelector('#ov-giveup')?.addEventListener('click', () => { ui.hideOverlay(); if (vs.active) vsFinish('giveUp'); else handle(game.giveUp()); });
+  }
+
+
+  // ---------- VS(2 台のスマホで同じ Board) ----------
+  // 部屋を作った側(host)が World と制限時間を選び、Board の cells をそのまま相手に送る。
+  // 両端末は同じ Board を NORMAL のルールで同時に遊び、制限時間か ALL CLEAR か FINISH で得点を確定して比べる。
+  // 進行中は game を VS 用の Game(保存しない)に差し替える。Heart・Coin・ショップ・必殺技は無い。
+  const vs = {
+    active: false, link: null, host: false, code: '', setup: null, playing: false, finished: false,
+    startAt: 0, endAt: 0, myFinal: null, rivalFinal: null, rival: { score: 0, mult: 1, left: 1, total: 1, done: false, gone: false },
+    lastSync: 0, lastSent: '', world: 0, timeLimitMs: CONFIG.vs.defaultTimeLimit,
+  };
+  const vsEl = (id) => document.getElementById(id);
+  const mmss = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
+  function showVsTitle() {
+    const card = ui.showOverlay(`
+      <div class="eyebrow">number match</div>
+      <h1 class="big">THE TEN</h1>
+      <div class="ja">同じ数字か、足して 10 になる 2 つの数字の Pair をタップで選んで消していこう！Board の数字を全部消せば Stage Clear！！</div>
+      ${modeTabs()}
+      <div class="ja mode-desc">2 台のスマホで同じ Board を同時に遊び、制限時間内の得点を競う。片方が部屋を作って合言葉を伝え、もう片方が合言葉で入る。ルールは NORMAL(Chain 倍率・FEVER)。Heart と Coin は無い。</div>
+      <div class="actions">
+        <button class="btn btn-primary" id="ov-create">CREATE ROOM(部屋を作る)</button>
+        <div class="code-input"><input id="vs-code-in" type="text" inputmode="latin" autocapitalize="characters" autocomplete="off" maxlength="4" placeholder="合言葉"><button class="btn btn-ghost" id="ov-join">JOIN</button></div>
+        <button class="btn btn-ghost" id="ov-rules">How to Play</button>
+      </div>
+      <div class="meta">同じ Wi-Fi でなくてもつながる。仲介サーバーは接続のときだけ使い、得点は端末どうしで直接やり取りする</div>`);
+    bindTabs(card);
+    card.querySelector('#ov-create').onclick = () => { ensureAudio(); vsCreate(); };
+    card.querySelector('#ov-join').onclick = () => { ensureAudio(); vsJoin(normalizeCode(card.querySelector('#vs-code-in').value)); };
+    card.querySelector('#vs-code-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') card.querySelector('#ov-join').click(); });
+    card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showTitle; };
+  }
+
+  function vsReset() {
+    if (vs.link) { vs.link.close(); vs.link = null; }
+    vs.active = false; vs.playing = false; vs.finished = false; vs.setup = null; vs.myFinal = null; vs.rivalFinal = null;
+    vs.rival = { score: 0, mult: 1, left: 1, total: 1, done: false, gone: false };
+    vsEl('vs-bar').hidden = true;
+    document.body.classList.remove('vs');
+  }
+  /** VS をやめて通常の Game に戻す(Title へ戻るとき)。 */
+  function leaveVs() {
+    if (vs.link) vs.link.send({ t: 'leave' });
+    vsReset();
+    game = mainGame;
+    applyMode();
+    if (game.run && game.stage && game.stage.status === 'play') redraw();
+  }
+
+  function vsWire(link) {
+    link.on('data', (d) => vsOnData(d));
+    link.on('close', () => {
+      vs.rival.gone = true;
+      if (vs.playing && !vs.finished) { ui.toast('相手との接続が切れた。自分の得点は確定できる', 3000); vsRenderBar(); }
+      else if (vs.finished && !vs.rivalFinal) showVsResult();
+      else if (!vs.playing && vs.active) { ui.toast('相手が退出した', 2500); showVsLobby(); }
+    });
+    link.on('error', (msg) => ui.toast(msg, 3000));
+  }
+
+  async function vsCreate() {
+    vsReset();
+    vs.active = true; vs.host = true;
+    const card = ui.showOverlay(`<div class="eyebrow">vs</div><h1>Create Room</h1><div class="ja">仲介サーバーにつないでいる…</div>`);
+    for (let tries = 0; tries < 5; tries++) {
+      vs.code = makeCode();
+      vs.link = new VsLink();
+      try { await vs.link.host(vs.code); break; }
+      catch (e) {
+        vs.link.close(); vs.link = null;
+        if (e.retry && tries < 4) continue;
+        card.innerHTML = `<div class="eyebrow">vs</div><h1>Create Room</h1><div class="ja">${e.message}</div><div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`;
+        card.querySelector('#ov-back').onclick = () => { vsReset(); showTitle(); };
+        return;
+      }
+    }
+    if (!vs.link) return;
+    vsWire(vs.link);
+    vs.link.on('open', () => { sound.lifeGain(); vibrate([20, 30, 20]); vs.link.send({ t: 'hello' }); showVsLobby(); });
+    showVsLobby();
+  }
+
+  async function vsJoin(code) {
+    if (code.length !== 4) { ui.toast('合言葉は 4 文字'); sound.invalid(); return; }
+    vsReset();
+    vs.active = true; vs.host = false; vs.code = code;
+    const card = ui.showOverlay(`<div class="eyebrow">vs</div><h1>Join</h1><div class="ja">合言葉 ${code} の部屋を探している…</div>`);
+    vs.link = new VsLink();
+    vsWire(vs.link);
+    try { await vs.link.join(code); }
+    catch (e) {
+      vs.link.close(); vs.link = null;
+      card.innerHTML = `<div class="eyebrow">vs</div><h1>Join</h1><div class="ja">${e.message}</div><div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`;
+      card.querySelector('#ov-back').onclick = () => { vsReset(); showTitle(); };
+      return;
+    }
+    sound.lifeGain(); vibrate([20, 30, 20]);
+    vs.link.send({ t: 'hello' });
+    showVsLobby();
+  }
+
+  /** 部屋の画面。host は World と制限時間を選んで START。相手は待つ。 */
+  function showVsLobby() {
+    if (!vs.active || vs.playing) return;
+    const connected = !!(vs.link && vs.link.open);
+    const totalWorlds = Math.ceil(stages.length / CONFIG.worldSize);
+    const worldChips = Array.from({ length: totalWorlds }, (_, w) => `<button class="btn btn-ghost chip ${vs.world === w ? 'on' : ''}" data-world="${w}">W${w + 1}<small>${stages[w * CONFIG.worldSize].cellsCount}〜 cells</small></button>`).join('');
+    const timeChips = CONFIG.vs.timeLimits.map((ms) => `<button class="btn btn-ghost chip ${vs.timeLimitMs === ms ? 'on' : ''}" data-time="${ms}">${mmss(ms)}</button>`).join('');
+    const card = ui.showOverlay(`
+      <div class="eyebrow">vs · room</div>
+      <h1>${vs.host ? 'Your Room' : 'Joined'}</h1>
+      <div class="code">${vs.code}</div>
+      <div class="ja">${vs.host ? (connected ? '相手がつながった。World と制限時間を選んで START。' : 'この合言葉を相手に伝える。相手が JOIN するまで待つ…') : (connected ? '相手(部屋の主)が START するのを待つ…' : 'つないでいる…')}</div>
+      ${vs.host ? `<div class="ja" style="margin-top:10px">Board(World)</div><div class="opts">${worldChips}</div><div class="ja">制限時間</div><div class="opts">${timeChips}</div>` : ''}
+      <div class="actions">
+        ${vs.host ? `<button class="btn btn-primary" id="ov-start" ${connected ? '' : 'disabled'}>START</button>` : ''}
+        <button class="btn btn-ghost" id="ov-title">Title へ(退出)</button>
+      </div>`);
+    card.querySelectorAll('[data-world]').forEach((b) => b.addEventListener('click', () => { vs.world = Number(b.dataset.world); sound.select(); showVsLobby(); }));
+    card.querySelectorAll('[data-time]').forEach((b) => b.addEventListener('click', () => { vs.timeLimitMs = Number(b.dataset.time); sound.select(); showVsLobby(); }));
+    card.querySelector('#ov-start')?.addEventListener('click', () => vsHostStart());
+    card.querySelector('#ov-title').onclick = () => { leaveVs(); showTitle(); };
+  }
+
+  function vsHostStart() {
+    if (!vs.host || !vs.link?.open) return;
+    const pick = pickBoard(stages, vs.world, CONFIG.worldSize);
+    const setup = makeSetup(pick, { timeLimitMs: vs.timeLimitMs, world: vs.world });
+    vs.link.send({ t: 'setup', setup });
+    vsBegin(setup);
+  }
+
+  function vsOnData(d) {
+    switch (d.t) {
+      case 'hello': if (!vs.playing) showVsLobby(); break;
+      case 'setup': if (!vs.host) vsBegin(d.setup); break;
+      case 'state': {
+        vs.rival.score = d.score; vs.rival.mult = d.mult; vs.rival.left = d.left; vs.rival.total = d.total; vs.rival.fever = !!d.fever;
+        vsRenderBar();
+        break;
+      }
+      case 'final': {
+        vs.rivalFinal = d;
+        vs.rival.done = true; vs.rival.score = d.score;
+        vsRenderBar();
+        if (vs.finished) showVsResult();
+        else ui.toast(`相手が得点を確定した: ${fmt(d.score)}`, 2500);
+        break;
+      }
+      case 'leave': {
+        vs.rival.gone = true;
+        if (vs.playing && !vs.finished) { ui.toast('相手が退出した。自分の得点は確定できる', 3000); vsRenderBar(); }
+        else if (vs.finished) showVsResult();
+        else { ui.toast('相手が退出した', 2500); showVsLobby(); }
+        break;
+      }
+      default: break;
+    }
+  }
+
+  /** 3・2・1 のあと、同じ Board で始める。 */
+  async function vsBegin(setup) {
+    vs.setup = setup; vs.playing = true; vs.finished = false; vs.myFinal = null; vs.rivalFinal = null;
+    vs.rival = { ...vs.rival, score: 0, mult: 1, left: setup.cellsCount, total: setup.cellsCount, done: false };
+    const def = stageDefFrom(setup);
+    const vsGame = new Game([def], { ...CONFIG, vsMode: true, lives: { max: 1, start: 1 } }, null);
+    busy = true;
+    const card = ui.showOverlay(`<div class="eyebrow">vs · stage ${pad2(setup.stage)} · ${mmss(setup.timeLimitMs)}</div><div class="count" id="vs-count">3</div><div class="ja" style="text-align:center">同じ Board。制限時間内に高い得点を！</div>`);
+    const steps = Math.round(CONFIG.vs.countdownMs / 1000);
+    for (let k = steps; k >= 1; k--) {
+      card.querySelector('#vs-count').textContent = String(k);
+      sound.select();
+      await sleep(1000);
+    }
+    card.querySelector('#vs-count').textContent = 'GO';
+    sound.stageClear();
+    await sleep(350);
+    busy = false;
+    game = vsGame;
+    document.body.classList.add('vs');
+    applyMode();
+    vs.startAt = Date.now(); vs.endAt = vs.startAt + setup.timeLimitMs;
+    vsEl('vs-bar').hidden = false;
+    vsRenderBar();
+    handle(game.newRun(0));
+  }
+
+  function vsRenderBar() {
+    if (!vs.active || !vs.playing) return;
+    const left = vs.endAt - Date.now();
+    const t = vsEl('vs-time');
+    t.textContent = mmss(left);
+    t.classList.toggle('low', left <= 15000 && !vs.finished);
+    vsEl('vs-rscore').textContent = fmt(vs.rival.score);
+    vsEl('vs-rmult').textContent = vs.rival.fever ? 'FEVER' : `×${Number(vs.rival.mult).toFixed(1)}`;
+    const total = Math.max(1, vs.rival.total);
+    vsEl('vs-rprog').style.width = `${Math.round((1 - vs.rival.left / total) * 100)}%`;
+    const st = vsEl('vs-rstate');
+    st.className = 'vs-rstate' + (vs.rival.gone ? ' gone' : vs.rival.done ? ' done' : '');
+    st.textContent = vs.rival.gone ? 'LOST' : vs.rival.done ? 'DONE' : `${vs.rival.left} left`;
+  }
+
+  /** 200ms ごと: 残り時間、相手への同期、時間切れ。 */
+  function vsTick() {
+    if (!vs.playing) return;
+    const now = Date.now();
+    vsRenderBar();
+    if (!vs.finished && now >= vs.endAt) { vsFinish('time'); return; }
+    if (!vs.finished && vs.link?.open && now - vs.lastSync >= CONFIG.vs.syncMs && game.stage) {
+      const left = game.stage.board.filter((c) => c !== 0).length;
+      const msg = { t: 'state', score: game.run.score, mult: Number(game.multiplier.toFixed(1)), left, total: vs.setup.cellsCount, fever: game.inFever };
+      const key = JSON.stringify(msg);
+      if (key !== vs.lastSent) { vs.link.send(msg); vs.lastSent = key; }
+      vs.lastSync = now;
+    }
+  }
+
+  /** ALL CLEAR: 残り時間の Bonus を足して確定。 */
+  async function onVsClear(ev) {
+    busy = true;
+    sound.stageClear(); fx.fireworks(ev.perfect ? 9 : 6); punch();
+    const remain = Math.max(0, vs.endAt - Date.now());
+    const timeBonus = Math.floor(remain / 1000) * CONFIG.vs.timeBonusPerSec;
+    game.run.score += timeBonus;
+    const cx = innerWidth / 2, cy = innerHeight * 0.42;
+    fx.floatText(cx, cy, 'ALL CLEAR', { color: PALETTE.amber, size: 42, dy: -30, life: 2.0 });
+    fx.floatText(cx, cy + 44, `TIME BONUS +${fmt(timeBonus)}`, { color: PALETTE.green, size: 20, dy: -30, life: 2.0 });
+    ui.renderHud(game);
+    await sleep(1200);
+    busy = false;
+    vsFinish('clear', { timeBonus, perfect: ev.perfect });
+  }
+
+  /** 自分の得点を確定して相手に送る。相手も確定していれば結果へ。 */
+  function vsFinish(reason, extra = {}) {
+    if (!vs.playing || vs.finished) return;
+    vs.finished = true;
+    if (game.stage && game.stage.status === 'play') game.stage.status = 'failed';   // これ以上の操作を受けない
+    vs.myFinal = { t: 'final', score: game.run.score, maxMult: game.multiplierFor(game.run.maxChain ?? 0), reason, ...extra };
+    if (vs.link?.open) vs.link.send(vs.myFinal);
+    vsRenderBar();
+    if (reason === 'time') { sound.feverEnd(); vibrate([80, 50, 80]); fx.flash('rgba(255,255,255,0.18)'); }
+    if (vs.rivalFinal || vs.rival.gone) { showVsResult(); return; }
+    const card = ui.showOverlay(`
+      <div class="eyebrow">vs · ${reason === 'time' ? 'time up' : reason === 'clear' ? 'all clear' : 'finished'}</div>
+      <h1 class="big">${fmt(vs.myFinal.score)}</h1>
+      <div class="ja">得点を確定した。相手が終わるのを待っている…(相手 ${fmt(vs.rival.score)}、残り ${vs.rival.left} cells)</div>
+      <div class="actions"><button class="btn btn-ghost" id="ov-title">Title へ(退出)</button></div>`);
+    card.querySelector('#ov-title').onclick = () => { leaveVs(); showTitle(); };
+  }
+
+  function showVsResult() {
+    vs.playing = false;
+    const me = vs.myFinal?.score ?? 0;
+    const rv = vs.rivalFinal?.score ?? null;
+    const gone = rv === null;
+    const win = gone ? null : me > rv ? 'win' : me < rv ? 'lose' : 'draw';
+    const title = gone ? 'No Contest' : win === 'win' ? 'YOU WIN' : win === 'lose' ? 'YOU LOSE' : 'DRAW';
+    if (win === 'win') { sound.perfect(); fx.fireworks(8); } else if (win === 'lose') sound.fail(); else sound.stageClear();
+    const reasonText = { time: '時間切れ', clear: 'ALL CLEAR', giveUp: 'FINISH', stuck: '詰み' };
+    const card = ui.showOverlay(`
+      <div class="eyebrow">vs · stage ${pad2(vs.setup.stage)} · ${mmss(vs.setup.timeLimitMs)}</div>
+      <h1 class="big ${win === 'win' ? 'vs-win' : win === 'lose' ? 'vs-lose' : ''}">${title}</h1>
+      <div class="vs-scores">
+        <div class="side ${win === 'win' ? 'win' : ''}"><div class="who">YOU</div><div class="pts">${fmt(me)}</div></div>
+        <div class="side ${win === 'lose' ? 'win' : ''}"><div class="who">RIVAL</div><div class="pts">${gone ? '—' : fmt(rv)}</div></div>
+      </div>
+      <div class="rows">
+        <div class="row"><span class="k">終わり方(自分 / 相手)</span><span class="v">${reasonText[vs.myFinal?.reason] ?? '·'} / ${gone ? '接続が切れた' : (reasonText[vs.rivalFinal.reason] ?? '·')}</span></div>
+        <div class="row"><span class="k">最高倍率(自分 / 相手)</span><span class="v">×${(vs.myFinal?.maxMult ?? 1).toFixed(1)} / ${gone ? '·' : '×' + Number(vs.rivalFinal.maxMult ?? 1).toFixed(1)}</span></div>
+        ${vs.myFinal?.timeBonus ? `<div class="row"><span class="k">Time Bonus(自分)</span><span class="v plus">+${fmt(vs.myFinal.timeBonus)}</span></div>` : ''}
+      </div>
+      <div class="actions">
+        ${vs.host && !vs.rival.gone ? '<button class="btn btn-primary" id="ov-rematch">REMATCH(新しい Board)</button>' : ''}
+        ${!vs.host && !vs.rival.gone ? '<div class="ja">部屋の主が REMATCH を押すと次の対戦が始まる</div>' : ''}
+        <button class="btn btn-ghost" id="ov-review">感想戦(手の評価)</button>
+        <button class="btn btn-ghost" id="ov-title">Title へ(退出)</button>
+      </div>`);
+    card.querySelector('#ov-rematch')?.addEventListener('click', () => { vs.playing = false; showVsLobby(); });
+    card.querySelector('#ov-review').onclick = () => showReview(showVsResult);
+    card.querySelector('#ov-title').onclick = () => { leaveVs(); showTitle(); };
   }
 
   // ---------- 入力 ----------
@@ -870,6 +1159,7 @@ async function boot() {
     if (busy || overlayOpen()) return;
     ensureAudio();
     const shop = game.shopItems().find((e) => e.item === 'add');
+    if (vs.active && game.stage?.addsLeft <= 0) { vsFinish('giveUp'); return; }
     if (game.stage?.addsLeft <= 0 && shop && shop.can) handle(game.buy('add'));
     else handle(game.useAdd(Date.now()));
   };
@@ -884,7 +1174,7 @@ async function boot() {
   soundLabel();
 
   // 手元で動かすときだけ、検査用に中身を見えるようにする
-  if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') globalThis.__ten = { game, bgm, sound };
+  if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') globalThis.__ten = { get game() { return game; }, bgm, sound, vs };
 
   // ---------- 起動 ----------
   applyMode();

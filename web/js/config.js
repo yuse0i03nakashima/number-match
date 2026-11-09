@@ -85,6 +85,14 @@ export const CONFIG = {
     songs: ['dance', 'sweet'],       // Stage ごとに順に使う曲。Stage 1 = dance、Stage 2 = sweet、Stage 3 = dance、…
     sweetMelody: 'vocal',            // sweet の旋律(melodies.js の候補名。lab.html で聴き比べる)
   },
+  // VS: 2 台のスマホで同じ Board を同時に遊び、得点を競う(通信は vs.js)
+  vs: {
+    timeLimits: [120000, 180000, 300000],   // 選べる制限時間(ミリ秒)。既定は 2 つ目
+    defaultTimeLimit: 180000,
+    timeBonusPerSec: 10,             // ALL CLEAR したとき、残り 1 秒ごとに加点
+    countdownMs: 3000,               // 両端末の 3・2・1
+    syncMs: 400,                     // 相手に得点を送る間隔
+  },
   // お題(Quest): Stage ごとに 1 つ。達成で Bonus
   quest: {
     bonus: 500,              // 達成の Bonus(Chain 倍率は掛けない)
