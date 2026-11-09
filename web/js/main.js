@@ -29,7 +29,7 @@ async function boot() {
   const sound = new Sound(CONFIG.audio.masterVolume);
   // BGM は生成(music.js)。メニューで SYNTH / OFF を切り替える
   const cand = SWEET_MELODIES[CONFIG.bgm.sweetMelody];   // 候補に進行・音色・テンポ・調が付いていればそれも使う
-  const synth = new Music({ volume: CONFIG.bgm.synthVolume, tonic: CONFIG.bgm.tonic, bpm: CONFIG.bgm.bpm, sweetBpm: cand.bpm ?? CONFIG.bgm.sweetBpm, sweetMelody: cand.notes, sweetProgression: cand.progression, sweetStyle: cand.style, sweetTonic: cand.tonic });
+  const synth = new Music({ volume: CONFIG.bgm.synthVolume, tonic: CONFIG.bgm.tonic, bpm: CONFIG.bgm.bpm, sweetBpm: cand.bpm ?? CONFIG.bgm.sweetBpm, sweetMelody: cand.notes, sweetMelodyLen: cand.length, sweetProgression: cand.progression, sweetStyle: cand.style, sweetTonic: cand.tonic });
   const loadBgmMode = () => { try { return localStorage.getItem('numbermatch.bgmMode') ?? CONFIG.bgm.mode; } catch { return CONFIG.bgm.mode; } };
   const bgm = {
     mode: loadBgmMode(),

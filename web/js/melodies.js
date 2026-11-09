@@ -51,14 +51,19 @@ const HOOK = [
 ];
 
 // R 参考曲の書き起こし: DungeonSlasher の広告に使われている曲の 15 秒を解析して置いたもの(確認用。そのまま本番には使わない)。
-//   解析はスペクトログラムを列ごとに正規化した画像を目で読み、音の始まりは拍の格子に合わせた。
-//   4 小節のループ(C メジャー / A マイナーで書くと):
+//   解析はスペクトログラムを列ごとに正規化した画像を目で読み、音の始まりは拍の格子に合わせた(scratchpad の spec_plot2.py / note_track.py / timbre.py)。
+//   曲の形: 冒頭 1 小節 + 4 小節のループ。表は 9 小節(冒頭 + ループ 2 回)で、ループ 2 回目の最後に冒頭へ戻る助走のソを置く。
+//   冒頭(C メジャー / A マイナーで書くと): ソー(前の小節の 2 拍半から伸ばす)ファ ミー (休) ミー ドー
+//   ループ:
 //     1 小節目 ソ ファ(ド)ミ レ ミ シー シ ソー   …8 分中心。シ(7 度)へ跳んで 16 分で 2 回押し、ソを 16 分 1 つ早く入れて次の小節へつなぐ
 //     2 小節目 (ソー)ファ ミ レ ミー ドー           …1 小節目の答え。主音ドで落ち着く
 //     3 小節目 ド レ ミ ファ ファ ミ (休)ソ(低)ド …上り坂。最後の低いソ→ドは次の小節への助走
 //     4 小節目 ソ ファ ミ レ ミー ドー              …2 小節目と同じ形
-//   和音: Am → G(半小節ずつ) | Em7 | Am | Fmaj7 の 4 小節ループ。BPM 約 144、四つ打ち、2・4 拍のクラップ、裏拍のオープンハット、
-//   リードはのこぎり波を重ねた音で 1 オクターブ下も重なる。音域は G4〜B5(主音 C5 から -5〜11)。
+//   和音: 冒頭 Am | ループ Am → G(半小節ずつ) | Em7 | Am | Fmaj7。BPM 約 144、調 C。
+//   音色(測定): リードはのこぎり波の軽いユニゾン(±8 cent)に 1 オクターブ上(-8 dB)と下(-10 dB)を重ね、立ち上がり約 40 ms、伸ばして次の音の直前で切る。
+//   キックは短く(約 100 ms)、2・4 拍はクラップ(10 ms 間隔の数発 + 約 -9 dB の尾)、裏拍の 8 分にオープンハット、ほかの 16 分に小さなクローズ。
+//   ベースは和音の根音を E1〜A1 の低さで 8 分に刻む。和音(パッド)はキックごとに凹んで戻る(サイドチェイン)。
+const CM_INTRO = [[0, 7, 2], [2, 5, 1], [3, 4, 3], [8, 4, 4], [12, 0, 2]];
 const CM_LOOP = [
   // 1 小節目
   [0, 7, 2], [2, 5, 1], [3, 0, 1], [4, 4, 2], [6, 2, 2], [8, 4, 2], [10, 11, 3], [13, 11, 2], [15, 7, 3],
@@ -69,18 +74,21 @@ const CM_LOOP = [
   // 4 小節目
   [48, 7, 2], [50, 5, 2], [52, 4, 2], [54, 2, 2], [56, 4, 3], [60, 0, 2],
 ];
-const CM = [...CM_LOOP, ...CM_LOOP.map(([p, n, l]) => [p + 64, n, l])];
+const shift = (notes, by) => notes.map(([p, n, l]) => [p + by, n, l]);
+const CM = [...CM_INTRO, ...shift(CM_LOOP, 16), ...shift(CM_LOOP, 80), [138, 7, 6]];   // 138 = 9 小節目の 2 拍半: 冒頭へ戻る助走のソ
+const CM_LEN = 9 * 16;
 // 進行は 1 小節 1 つ。half があれば小節の後半だけその和音に替わる
-const CM_PROGRESSION = [
+const CM_LOOP_PROGRESSION = [
   { degree: 9, kind: 'min', half: { degree: 7, kind: 'maj' } },   // Am → G
   { degree: 4, kind: 'm7' },                                       // Em7
   { degree: 9, kind: 'min' },                                      // Am
   { degree: 5, kind: 'maj7' },                                     // Fmaj7
-  { degree: 9, kind: 'min', half: { degree: 7, kind: 'maj' } }, { degree: 4, kind: 'm7' }, { degree: 9, kind: 'min' }, { degree: 5, kind: 'maj7' },
 ];
+const CM_PROGRESSION = [{ degree: 9, kind: 'min' }, ...CM_LOOP_PROGRESSION, ...CM_LOOP_PROGRESSION];
+const CM_STYLE = { lead: 'cm', hatOff: true, octaveDown: true, clap: true, pump: true, stabs: false, bass: 'eighths', kick: 'tight', padGain: 0.04 };
 
 export const SWEET_MELODIES = {
-  cm: { name: 'R 参考曲', desc: '広告の曲の 15 秒を画像で読み直した書き起こし(確認用)。Am → G | Em7 | Am | Fmaj7 の 4 小節ループ、BPM 144、調 C、のこぎり波のリードに 1 オクターブ下を重ねる、裏拍のオープンハット', notes: CM, progression: CM_PROGRESSION, bpm: 144, tonic: 60, style: { lead: 'supersaw', hatOff: true, octaveDown: true } },
+  cm: { name: 'R 参考曲', desc: '広告の曲の 15 秒を画像で読んだ書き起こし(確認用)。冒頭 1 小節 + Am → G | Em7 | Am | Fmaj7 の 4 小節ループ × 2、BPM 144、調 C。測定した音色(軽いユニゾンのリード + 上下のオクターブ、短いキック、クラップ、8 分のベース、サイドチェイン)', notes: CM, length: CM_LEN, progression: CM_PROGRESSION, bpm: 144, tonic: 60, style: CM_STYLE },
   vocal: { name: 'A 歌メロ', desc: '3 度ずつ跳んで 9 度に触れ、短短長で下りる。2 小節目は切ない音を長く', notes: VOCAL },
   anthem: { name: 'B アンセム', desc: 'タ・タ・ターンを 2 回。2 小節の問いと 2 小節の答え', notes: ANTHEM },
   riff: { name: 'C リフ', desc: '3 音の上がるモチーフを 5 つおきに置いて拍とずらす。てっぺんは共通', notes: RIFF },
