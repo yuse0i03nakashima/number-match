@@ -91,6 +91,7 @@ export class Music {
     this.pendingSong = null;
     this.sweetBpm = cfg.sweetBpm ?? 150;
     this.sweetMelody = cfg.sweetMelody ?? SWEET_MELODIES[DEFAULT_SWEET_MELODY].notes;
+    this.sweetMelodyLen = cfg.sweetMelodyLen ?? SWEET_MELODY_LEN;   // 旋律の表の長さ(16 分の数)。候補ごとに変えられる
     this.sweetProgression = cfg.sweetProgression ?? SWEET_PROGRESSION;   // 候補ごとに進行を変えられる(lab)
     this.sweetStyle = cfg.sweetStyle ?? { lead: 'soft', hatOff: false };  // 旋律の音色とハットの置き方
     this.sweetTonic = cfg.sweetTonic ?? null;   // sweet だけ別の調にするとき(null なら tonic と同じ)
@@ -127,6 +128,8 @@ export class Music {
     this.delayOut = ctx.createGain(); this.delayOut.gain.value = 0.3;
     this.delay.connect(this.delayFb); this.delayFb.connect(this.delay); this.delay.connect(this.delayOut); this.delayOut.connect(this.lowpass);
     // ドラムはフィルタを通さない(抜けを保つ)
+    this.padBus = ctx.createGain(); this.padBus.gain.value = 1;     // sweet のパッド。参考曲風ではキックごとに凹ませる
+    this.padBus.connect(this.lowpass);
     this.drumBus = ctx.createGain(); this.drumBus.gain.value = 1;
     this.drumBus.connect(this.pump);
     this.lowpass.connect(this.pump);
@@ -209,7 +212,7 @@ export class Music {
     if (this.playing) { this.pendingSong = name; return; }
     this.applySong(name);
   }
-  setSweetMelody(notes) { this.sweetMelody = notes; }
+  setSweetMelody(notes, len) { this.sweetMelody = notes; this.sweetMelodyLen = len ?? SWEET_MELODY_LEN; }
   setSweetProgression(p) { this.sweetProgression = p ?? SWEET_PROGRESSION; if (this.song === 'sweet') this.chords = buildSweetChords(this.tonicFor('sweet'), this.sweetProgression); }
   setSweetStyle(st) { this.sweetStyle = { lead: 'soft', hatOff: false, ...(st ?? {}) }; }
   setSweetTonic(t) { this.sweetTonic = t ?? null; if (this.song === 'sweet') this.chords = buildSweetChords(this.tonicFor('sweet'), this.sweetProgression); }
@@ -271,7 +274,7 @@ export class Music {
     for (const [c, t0, len] of parts) {
       for (const m of c.notes) {
         for (const det of [-6, 6]) {
-          this.tone({ t: t0, freq: mtof(m + 12), type: 'triangle', detune: det, dur: len * 1.02, gain: 0.028, attack: chord.half ? 0.12 : 0.3, release: 0.5, cutoff: 2800 });
+          this.tone({ t: t0, freq: mtof(m + 12), type: 'triangle', detune: det, dur: len * 1.02, gain: this.sweetStyle.padGain ?? 0.028, attack: chord.half ? 0.12 : 0.3, release: 0.5, cutoff: 2800, bus: this.padBus });
         }
       }
     }
@@ -290,36 +293,49 @@ export class Music {
     const wild = this.fever && !(this.calm && this.calm.feverCalm);
 
     // ドラム: 四つ打ち、2・4 拍にスネア、8 分のハイハット。層 3 からは 2 小節に 1 回 16 分の連打。FEVER は 16 分
+    const st = this.sweetStyle;
     if (!this.melodyOnly) {
-    if (s % 4 === 0) this.kick(t);
-    if (s === 4 || s === 12) this.snare(t);
+    if (s % 4 === 0) {
+      this.kick(t, st.kick === 'tight');
+      if (st.pump) {   // 参考曲風: パッドをキックごとに凹ませて 3 つの 16 分で戻す(測定: 拍頭 -6 dB → 拍の終わりで 0 dB)
+        this.padBus.gain.cancelScheduledValues(t); this.padBus.gain.setValueAtTime(0.4, t); this.padBus.gain.linearRampToValueAtTime(1, t + this.stepSec * 3);
+      }
+    }
+    if (s === 4 || s === 12) { if (st.clap) this.clap(t); else this.snare(t); }
     const roll = L >= 3 && bar % 2 === 1 && s >= 13;
-    if (this.sweetStyle.hatOff && !roll && !wild) { if (s % 4 === 2) this.hat(t, 0.11, true); }
+    if (st.hatOff && !roll && !wild) { if (s % 4 === 2) this.hat(t, 0.11, true); else this.hat(t, 0.03); }
     else if (s % 2 === 0 || roll || wild) this.hat(t, roll ? 0.07 : s % 4 === 2 ? 0.1 : 0.06, s === 14 && !roll);
 
     // 808 風のベース: 音の頭で上から滑り込む
     const bassAt = { 0: 6, 6: 2, 8: 4, 12: 2, 14: 2 };
-    if (bassAt[s]) {
+    if (st.bass === 'eighths') {   // 参考曲風: 根音を 1 オクターブ低く、8 分で刻む(滑り込みなし)
+      if (s % 2 === 0) this.bass808(t, mtof(chord.root - 24), this.stepSec * 1.7, 1.0);
+    } else if (bassAt[s]) {
       const m = chord.root - 12 + (s === 14 ? 12 : s === 12 ? 7 : 0);
       this.bass808(t, mtof(m), this.stepSec * bassAt[s], s === 0 ? 1.5 : 1.12);
     }
 
     // プラックの和音: 裏で刻むシンコペーション
     const stabs = { 0: 0.13, 3: 0.1, 6: 0.12, 10: 0.1, 12: 0.08, 14: 0.11 };
-    if (stabs[s]) {
+    if (stabs[s] && st.stabs !== false) {
       for (const [i, m] of v.entries()) this.pluck(t + i * 0.005, mtof(m + 12), stabs[s] * (i === 0 ? 0.6 : 1));
     }
     }
 
     // 旋律(層 1 から。曲の顔なので最初から鳴らす)。層 4 / FEVER では 1 オクターブ下でも重ねる
     if (L >= 1) {
-      const pos = (bar * STEPS_PER_BAR + s) % SWEET_MELODY_LEN;
+      const pos = (bar * STEPS_PER_BAR + s) % this.sweetMelodyLen;
       const note = this.sweetMelody.find((n) => n[0] === pos);
       if (note) {
         const m = this.tonicFor('sweet') + 12 + note[1];
         const dur = this.stepSec * note[2] * 0.9;
         const rel = Math.min(0.12, dur * 0.35);
-        if (this.sweetStyle.lead === 'supersaw') {
+        if (this.sweetStyle.lead === 'cm') {
+          // 測定に合わせた音: のこぎり波 3 本(±8 cent)、立ち上がり 40 ms、次の音の直前まで伸ばす。1 オクターブ上を -8 dB で重ねる(下は octaveDown)
+          const d2 = this.stepSec * note[2] * 0.97, r2 = 0.06;
+          for (const det of [-8, 0, 8]) this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: det, dur: d2, gain: 0.05, attack: 0.04, release: r2, cutoff: 6000, toDelay: det === 0 });
+          this.tone({ t, freq: mtof(m + 12), type: 'sawtooth', dur: d2, gain: 0.02, attack: 0.04, release: r2, cutoff: 8000 });
+        } else if (this.sweetStyle.lead === 'supersaw') {
           // 参考曲風: のこぎり波 4 本を ±18 / ±6 cent にずらして重ねる。明るく、刻みが立つ
           for (const det of [-18, -6, 6, 18]) this.tone({ t, freq: mtof(m), type: 'sawtooth', detune: det, dur, gain: 0.055, attack: 0.003, release: rel, cutoff: 4500, toDelay: det === 6 });
         } else {
@@ -426,7 +442,7 @@ export class Music {
   }
 
   // ---------- 楽器 ----------
-  tone({ t, freq, type, detune = 0, dur, gain, attack, release, cutoff, toDelay = false }) {
+  tone({ t, freq, type, detune = 0, dur, gain, attack, release, cutoff, toDelay = false, bus = null }) {
     const ctx = this.ctx;
     const osc = ctx.createOscillator(); osc.type = type; osc.frequency.value = freq; osc.detune.value = detune;
     const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
@@ -435,19 +451,20 @@ export class Music {
     g.gain.exponentialRampToValueAtTime(gain, t + attack);
     g.gain.setValueAtTime(gain, t + Math.max(attack, dur - release));
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    osc.connect(f); f.connect(g); g.connect(this.lowpass);
+    osc.connect(f); f.connect(g); g.connect(bus ?? this.lowpass);
     if (toDelay) g.connect(this.delay);
     osc.start(t); osc.stop(t + dur + 0.05);
   }
 
-  kick(t) {
+  kick(t, tight = false) {
     const ctx = this.ctx;
     const osc = ctx.createOscillator(); osc.type = 'sine';
-    osc.frequency.setValueAtTime(150, t); osc.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+    // tight: 参考曲の測定(約 100 ms で -20 dB)に合わせた短いキック
+    osc.frequency.setValueAtTime(tight ? 170 : 150, t); osc.frequency.exponentialRampToValueAtTime(tight ? 48 : 42, t + (tight ? 0.06 : 0.12));
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.9, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+    g.gain.setValueAtTime(tight ? 1.0 : 0.9, t); g.gain.exponentialRampToValueAtTime(0.0001, t + (tight ? 0.14 : 0.32));
     osc.connect(g); g.connect(this.drumBus);
-    osc.start(t); osc.stop(t + 0.35);
+    osc.start(t); osc.stop(t + (tight ? 0.16 : 0.35));
     // FEVER のポンプ: キックのたびに全体を凹ませて戻す(サイドチェインの代わり)。CLASSIC ではしない
     if (this.fever && !(this.calm && this.calm.feverCalm)) {
       this.pump.gain.cancelScheduledValues(t);
@@ -465,6 +482,19 @@ export class Music {
     g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(f); f.connect(g); g.connect(this.drumBus);
     src.start(t); src.stop(t + dur + 0.02);
+  }
+
+  // クラップ: 10 ms 間隔の短い雑音 3 発のあと、約 -9 dB の尾が 120 ms(参考曲の測定に合わせた)
+  clap(t) {
+    const ctx = this.ctx;
+    for (const [dt, g0, dur] of [[0, 0.45, 0.012], [0.011, 0.4, 0.012], [0.022, 0.5, 0.03], [0.03, 0.18, 0.14]]) {
+      const src = ctx.createBufferSource(); src.buffer = this.noise;
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2200; f.Q.value = 0.9;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(g0, t + dt); g.gain.exponentialRampToValueAtTime(0.0001, t + dt + dur);
+      src.connect(f); f.connect(g); g.connect(this.drumBus);
+      src.start(t + dt); src.stop(t + dt + dur + 0.02);
+    }
   }
 
   snare(t) {

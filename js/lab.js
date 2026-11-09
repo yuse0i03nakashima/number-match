@@ -12,7 +12,7 @@ function heatFor(layers) { return [0, 0, 0.25, 0.5, 0.75][layers] ?? 0; }
 
 function makeMusic() {
   const cand = SWEET_MELODIES[current];
-  const m = new Music({ volume: CONFIG.bgm.synthVolume, tonic: Number($('key').value), bpm: CONFIG.bgm.bpm, sweetBpm: Number($('bpm').value), sweetMelody: cand.notes, sweetProgression: cand.progression, sweetStyle: cand.style });
+  const m = new Music({ volume: CONFIG.bgm.synthVolume, tonic: Number($('key').value), bpm: CONFIG.bgm.bpm, sweetBpm: Number($('bpm').value), sweetMelody: cand.notes, sweetMelodyLen: cand.length, sweetProgression: cand.progression, sweetStyle: cand.style });
   m.attach(ctx);
   m.setSong('sweet');
   m.setHeat(heatFor(Number($('layers').value)));
@@ -32,7 +32,8 @@ function start() {
 function showNotes() {
   const notes = SWEET_MELODIES[current].notes;
   const lines = [];
-  for (let bar = 0; bar < 8; bar++) {
+  const bars = (SWEET_MELODIES[current].length ?? 128) / 16;
+  for (let bar = 0; bar < bars; bar++) {
     const row = notes.filter((n) => n[0] >= bar * 16 && n[0] < (bar + 1) * 16);
     lines.push(row.map((n) => `[${n[0]}, ${n[1]}, ${n[2]}]`).join(', '));
   }
@@ -52,7 +53,7 @@ for (const [key, m] of Object.entries(SWEET_MELODIES)) {
     if (m.tonic && [...$('key').options].some((o) => Number(o.value) === m.tonic)) { $('key').value = String(m.tonic); if (music) music.setSweetTonic(m.tonic); }
     else if (music) music.setSweetTonic(null);
     if (music) {
-      music.setSweetMelody(m.notes); music.setSweetProgression(m.progression); music.setSweetStyle(m.style);
+      music.setSweetMelody(m.notes, m.length); music.setSweetProgression(m.progression); music.setSweetStyle(m.style);
       music.sweetBpm = Number($('bpm').value); music.pendingBpm = music.bpmFor('sweet');
     }
   });
@@ -76,14 +77,14 @@ $('apply').addEventListener('click', () => {
     const arr = JSON.parse('[' + $('notes').value.replace(/,\s*$/, '') + ']');
     if (!Array.isArray(arr) || !arr.every((n) => Array.isArray(n) && n.length === 3 && n.every(Number.isFinite))) throw new Error('形が違います');
     SWEET_MELODIES[current].notes = arr;
-    if (music) music.setSweetMelody(arr);
+    if (music) music.setSweetMelody(arr, SWEET_MELODIES[current].length);
     $('err').textContent = `適用しました(${arr.length} 音)`;
   } catch (e) { $('err').textContent = '読めません: ' + e.message; }
 });
 
 setInterval(() => {
   if (!music || !music.playing) return;
-  const bar = Math.floor(music.step / 16) % 8;
+  const bar = Math.floor(music.step / 16) % ((SWEET_MELODIES[current].length ?? 128) / 16);
   $('pos').textContent = `${bar + 1} 小節目 / 層 ${music.layers} / ${music.bpm} BPM`;
   $('meter').style.width = `${Math.round(music.level() * 100)}%`;
 }, 100);
