@@ -1,6 +1,6 @@
 // Service Worker: 一度開いたら電波が無くても遊べるようにファイルを手元に置く。
 // 更新のたびに VERSION を上げると古いキャッシュが捨てられる。
-const VERSION = 'ten-v25';
+const VERSION = 'ten-v26';
 const FILES = [
   './', './index.html', './manifest.json',
   './css/style.css',
