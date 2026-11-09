@@ -49,6 +49,8 @@ for (const [key, m] of Object.entries(SWEET_MELODIES)) {
     for (const x of $('melodies').children) x.classList.toggle('on', x.dataset.key === key);
     showNotes();
     if (m.bpm) { $('bpm').value = m.bpm; $('bpmv').textContent = m.bpm; }
+    if (m.tonic && [...$('key').options].some((o) => Number(o.value) === m.tonic)) { $('key').value = String(m.tonic); if (music) music.setSweetTonic(m.tonic); }
+    else if (music) music.setSweetTonic(null);
     if (music) {
       music.setSweetMelody(m.notes); music.setSweetProgression(m.progression); music.setSweetStyle(m.style);
       music.sweetBpm = Number($('bpm').value); music.pendingBpm = music.bpmFor('sweet');
@@ -65,7 +67,7 @@ $('bpm').addEventListener('input', () => {
   $('bpmv').textContent = $('bpm').value;
   if (music) { music.sweetBpm = Number($('bpm').value); music.pendingBpm = music.bpmFor('sweet'); }
 });
-$('key').addEventListener('change', () => { if (music && music.playing) start(); });
+$('key').addEventListener('change', () => { if (music) music.setSweetTonic(null); if (music && music.playing) start(); });
 $('layers').addEventListener('change', () => { if (music) music.setHeat(heatFor(Number($('layers').value))); });
 $('fever').addEventListener('change', () => { if (music) music.setFever($('fever').checked); });
 $('solo').addEventListener('change', () => { if (music) music.melodyOnly = $('solo').checked; });
