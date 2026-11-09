@@ -900,7 +900,7 @@ async function boot() {
 
   function vsReset() {
     if (vs.link) { vs.link.close(); vs.link = null; }
-    vs.active = false; vs.playing = false; vs.finished = false; vs.setup = null; vs.myFinal = null; vs.rivalFinal = null;
+    vs.active = false; vs.playing = false; vs.counting = false; vs.finished = false; vs.setup = null; vs.myFinal = null; vs.rivalFinal = null;
     vs.rival = { score: 0, mult: 1, left: 1, total: 1, done: false, gone: false };
     vsEl('vs-bar').hidden = true;
     document.body.classList.remove('vs');
@@ -999,7 +999,7 @@ async function boot() {
 
   function vsOnData(d) {
     switch (d.t) {
-      case 'hello': if (!vs.playing) showVsLobby(); break;
+      case 'hello': if (!vs.playing && !vs.counting) showVsLobby(); break;
       case 'setup': if (!vs.host) vsBegin(d.setup); break;
       case 'state': {
         vs.rival.score = d.score; vs.rival.mult = d.mult; vs.rival.left = d.left; vs.rival.total = d.total; vs.rival.fever = !!d.fever;
@@ -1027,7 +1027,10 @@ async function boot() {
 
   /** 3・2・1 のあと、同じ Board で始める。 */
   async function vsBegin(setup) {
-    vs.setup = setup; vs.playing = true; vs.finished = false; vs.myFinal = null; vs.rivalFinal = null;
+    if (vs.counting) return;
+    vs.counting = true;
+    // 3・2・1 の間は playing を立てない(vsTick が時間切れと見なさないように)。endAt を決めてから playing にする
+    vs.setup = setup; vs.playing = false; vs.finished = false; vs.myFinal = null; vs.rivalFinal = null;
     vs.rival = { ...vs.rival, score: 0, mult: 1, left: setup.cellsCount, total: setup.cellsCount, done: false };
     const def = stageDefFrom(setup);
     const vsGame = new Game([def], { ...CONFIG, vsMode: true, lives: { max: 1, start: 1 } }, null);
@@ -1047,6 +1050,7 @@ async function boot() {
     document.body.classList.add('vs');
     applyMode();
     vs.startAt = Date.now(); vs.endAt = vs.startAt + setup.timeLimitMs;
+    vs.playing = true; vs.counting = false; vs.lastSent = '';
     vsEl('vs-bar').hidden = false;
     vsRenderBar();
     handle(game.newRun(0));
