@@ -122,15 +122,23 @@ export const CONFIG = {
     feverCalm: true,
   },
   // Coin: THE TEN で Stage を Clear すると、その Stage の得点がそのまま貯まる(Best Score とは別の累計)。ショップとスロットで使う
+  // LINE TEN(試作。Title の LINE タブ): 一直線上で間が空マスの数字を 2〜maxGroup 個たどり、合計がちょうど 10 で消す。同じ数字の Pair は無い。
+  // 個数の倍率を Pair の得点に掛ける。Board は THE TEN と同じ stages.json(足し算だけで全消しできる保証は無い。採用したら Haskell の生成器を広げる)
+  line: {
+    maxGroup: 4,
+    sizeMult: { 2: 1, 3: 2.5, 4: 5 },
+  },
   shop: {
     normal:  { hint: 5000,  add: 10000, heart: 20000 },
     classic: { hint: 1500,  add: 3000 },                   // CLASSIC に Heart は無い
+    line:    { hint: 5000,  add: 10000, heart: 20000 },
   },
   // 必殺技(Stage 中に大量の Coin で使う)。snipe: 位置に関係なく Pair を 1 組消す。line: 1 行を丸ごと消す
   // 使った Stage は Stage ごとの最高得点に数えない(ショップで買った Stage も同じ)
   skill: {
     normal:  { snipe: 5000, line: 20000 },
     classic: { snipe: 1500, line: 6000 },
+    line:    { snipe: 5000, line: 20000 },
   },
   // スロット(SLOT タブ。Coin を賭けて Coin を得る別ゲーム)。確率は 1 回転ごと。払い戻し率の目安は 90%(simulate で測る)
   slot: {

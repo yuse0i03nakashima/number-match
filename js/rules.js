@@ -99,3 +99,66 @@ export function parityOk(board) {
   for (let d = 1; d <= 4; d++) if ((count(d) + count(10 - d)) % 2 !== 0) return false;
   return count(5) % 2 === 0;
 }
+
+// ---------- LINE TEN(試作): 一直線上で間が空マスの数字を 2〜maxLen 個たどり、合計が 10 の組を消す ----------
+// Haskell 側(Rules.hs)にはまだ無い。モードを採用したら移植して vectors で一致を確かめる。
+const LINE_STEPS = [1, WIDTH, WIDTH + 1, WIDTH - 1];
+
+/** p から step 方向に進んで最初に出会う数字の位置(途中は空マス)。無ければ -1。斜めは列の動きで行をまたぐ偽物を弾く。 */
+export function nextAlong(board, p, step) {
+  let prev = p, q = p + step;
+  while (q < board.length) {
+    if (step === WIDTH + 1 && colOf(q) !== colOf(prev) + 1) return -1;
+    if (step === WIDTH - 1 && colOf(q) !== colOf(prev) - 1) return -1;
+    if (board[q] !== 0) return q;
+    prev = q; q += step;
+  }
+  return -1;
+}
+
+/** i から各方向へ数字をたどった並び(長さ 2〜maxLen)の一覧。 */
+export function lineRuns(board, i, maxLen = 4) {
+  const out = [];
+  for (const step of LINE_STEPS) {
+    const run = [i];
+    let p = i;
+    while (run.length < maxLen) {
+      p = nextAlong(board, p, step);
+      if (p < 0) break;
+      run.push(p);
+      out.push(run.slice());
+    }
+  }
+  return out;
+}
+
+/** いま消せる組の一覧(昇順の位置の配列。合計が target、長さ 2〜maxLen)。同じ組は 1 つにまとめる。 */
+export function validGroups(board, maxLen = 4, target = 10) {
+  const out = [], seen = new Set();
+  for (let i = 0; i < board.length; i++) {
+    if (board[i] === 0) continue;
+    for (const run of lineRuns(board, i, maxLen)) {
+      let sum = 0;
+      for (const p of run) sum += board[p];
+      if (sum !== target) continue;
+      const key = run.join(',');
+      if (seen.has(key)) continue;
+      seen.add(key); out.push(run);
+    }
+  }
+  return out;
+}
+
+/** cells(昇順)が、ある 1 方向で数字を順にたどった並びになっているか(合計は見ない。途中の選択の検査に使う)。 */
+export function isRun(board, cells, maxLen = 4) {
+  if (cells.length === 0 || cells.length > maxLen) return false;
+  if (cells.some((p) => cellAt(board, p) === 0)) return false;
+  if (cells.length === 1) return true;
+  return LINE_STEPS.some((step) => cells.every((p, k) => k === 0 || nextAlong(board, cells[k - 1], step) === p));
+}
+
+/** 複数のマスを空にする(行の縮約はしない)。 */
+export function removeCells(cells, board) {
+  const set = new Set(cells);
+  return board.map((c, p) => (set.has(p) ? 0 : c));
+}

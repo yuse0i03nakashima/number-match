@@ -26,15 +26,16 @@
 //   CLASSIC は本家に近い遊び方: 倍率 ×1 固定、ゲージ・FEVER・Speed・Heart なし、Dead End はすぐ知らせる、
 //   Add は 5 回、Hint は 1 段階だけ。Perfect は Add も Hint も使わないこと。
 
-import { validPairs, removePair, collapseRows, isCleared, matches, connected, rows, numbers, rowOf, WIDTH } from './rules.js';
-import { pathInfo, difficultyMult, speedTier } from './scoring.js';
+import { validPairs, removePair, collapseRows, isCleared, matches, connected, rows, numbers, rowOf, WIDTH, validGroups, isRun, removeCells as removeCellsOn } from './rules.js';
+import { pathInfo, difficultyMult, speedTier, groupInfo } from './scoring.js';
 import { chooseAddition } from './solver.js';
 import { makeQuest, updateQuest } from './quest.js';
+import { makeLineBoard } from './linegen.js';
 
 const RANKS = ['C', 'B', 'A', 'S'];
 const rankIndex = (r) => RANKS.indexOf(r);
 
-export const MODES = ['normal', 'classic'];
+export const MODES = ['normal', 'classic', 'line'];   // line = LINE TEN(試作)
 const emptyProgress = () => ({ maxStage: 0, stars: {}, ranks: {}, attempts: {}, bestScore: 0, runs: 0, quests: {}, stageBest: {} });
 
 export class Game {
@@ -86,6 +87,7 @@ export class Game {
   get run() { return this.slots[this.mode].run; }
   set run(v) { this.slots[this.mode].run = v; }
   get classic() { return this.mode === 'classic'; }
+  get line() { return this.mode === 'line'; }       // LINE TEN(試作): 一直線上の 2〜4 個で合計 10
   /** モードを切り替える(Title から)。各モードの記録と Run はそのまま残る。 */
   setMode(mode) { if (MODES.includes(mode)) { this.mode = mode; this.save(); } }
   /** Coin を足す(負の値で引く)。残高は 0 未満にならない。 */
@@ -220,11 +222,11 @@ export class Game {
     const c = this.cfg.chain;
     return (this.multiplier - 1) / (c.max - 1);
   }
-  get isStuck() { return !!this.stage && validPairs(this.stage.board).length === 0; }
+  get isStuck() { return !!this.stage && this.moves(this.stage.board).length === 0; }
   get inFever() { return !!this.stage?.fever; }
   /** いまの Hint の段階: 'hint' | 'flash' | 'scope'。CLASSIC は常に 'hint'。 */
   get hintTier() {
-    if (this.classic) return 'hint';
+    if (this.classic || this.line) return 'hint';   // LINE は組が 2〜4 個なので FLASH / SCOPE は使わず HINT だけ
     const h = this.cfg.hint, m = this.multiplier;
     if (this.inFever || m >= h.scopeFrom) return 'scope';
     if (m >= h.flashFrom) return 'flash';
@@ -265,6 +267,8 @@ export class Game {
     const def = this.stageDef;
     const attempt = this.progress.attempts[def.stage] ?? 0;
     const variant = def.boards[attempt % def.boards.length];
+    // LINE TEN(試作)は足し算だけのルール用に Board を作り直す(Stage 番号と挑戦回数を種に。linegen.js)
+    const cells = this.line && !def.lineReady ? makeLineBoard(def.cellsCount, def.stage * 1000 + attempt).cells : variant.cells;   // lineReady: 足し算ルール用に作ってある面(検査用)
     // carry があれば前の Stage の Chain・FEVER を持ち越す(Board を全部消して続けるとき)。
     // World の最初の Stage では、前の World で残した Add の投資分(run.investChain)を開始 Chain に足す
     const worldStart = this.run.stageIndex % this.cfg.worldSize === 0;
@@ -278,7 +282,7 @@ export class Game {
     const fever = carry && carry.fever ? { until: carry.fever.until, startedAt: carry.fever.startedAt ?? now } : null;
     const addsTotal = this.classic ? this.cfg.classic.addsPerStage + (this.run.bonusAdds ?? 0) : def.adds;
     this.run.stage = {
-      board: variant.cells.slice(),
+      board: cells.slice(),
       addsLeft: addsTotal,
       addsTotal,
       addsUsed: 0,
@@ -287,7 +291,8 @@ export class Game {
       chain,
       stageScore: 0,
       selected: null,
-      hintPair: null,        // HINT で示した Pair(消すまで残る)
+      picks: [],             // LINE TEN で選択中のマス(昇順)
+      hintPair: null,        // HINT で示した Pair(消すまで残る。LINE では 2〜4 個の組)
       flashUntil: null,      // FLASH の終わる時刻
       scope: null,           // SCOPE: { tile, misses }
       lastRemoveAt: chain > 0 ? now : null,   // 前の消去の時刻(速さ Bonus と Chain ゲージ用)
@@ -296,7 +301,7 @@ export class Game {
       status: 'play',        // play | clear | failed | runOver | complete
       history: [],           // 感想戦用の手の記録(review.js が読む)
       maxChain: chain,       // この Stage の最高 Chain
-      quest: makeQuest(this.cfg, def.stage, variant.cells, { exclude: this.classic ? ['chain', 'noHint'] : [] }),   // この Stage のお題(CLASSIC に Chain のお題は無く、Hint なしは Perfect と重なるので出さない)
+      quest: makeQuest(this.cfg, def.stage, cells, { exclude: this.classic ? ['chain', 'noHint'] : this.line ? ['digitFirst', 'diagonal'] : [] }),   // この Stage のお題(LINE は Pair 前提のお題を出さない)(CLASSIC に Chain のお題は無く、Hint なしは Perfect と重なるので出さない)
       firstDigitCleared: null,
     };
     this.save();
@@ -358,6 +363,7 @@ export class Game {
     if (!st || st.status !== 'play') return [];
     const b = st.board;
     if (st.skill) return this.tapSkill(pos, now);
+    if (this.line) return this.tapLine(pos, now);
     if (b[pos] === 0) {
       if (st.selected === null) return [];
       const prev = st.selected; st.selected = null;
@@ -381,6 +387,29 @@ export class Game {
     return events;
   }
 
+  /** LINE TEN の操作: 一直線上で間が空マスの数字を 2〜4 個たどって選び、合計が 10 になった時点で消す。 */
+  tapLine(pos, now) {
+    const st = this.stage, b = st.board, maxLen = this.cfg.line.maxGroup;
+    st.picks ??= [];
+    if (b[pos] === 0 || st.picks.includes(pos)) {   // 空マスか選択済みをタップ: 選択を全部やめる
+      if (!st.picks.length) return [];
+      const froms = st.picks; st.picks = [];
+      return [{ type: 'deselectAll', cells: froms }];
+    }
+    const next = [...st.picks, pos].sort((a, c) => a - c);
+    let sum = 0;
+    for (const p of next) sum += b[p];
+    if (next.length > maxLen || sum > 10 || !isRun(b, next, maxLen)) {   // 一直線でない・間に数字がある・10 を超えた: 選び直し
+      const froms = st.picks; st.picks = [pos];
+      return [{ type: 'invalid', from: froms[froms.length - 1] ?? null, to: pos, froms }, { type: 'select', pos }];
+    }
+    if (sum === 10 && next.length >= 2) return this.removeGroup(next, now);
+    st.picks = next;
+    return [{ type: 'select', pos }];
+  }
+  /** いま消せる手の一覧(LINE は 2〜4 個の組、ほかは Pair)。 */
+  moves(board) { return this.line ? validGroups(board, this.cfg.line.maxGroup) : validPairs(board); }
+
   scopeMiss() {
     const st = this.stage, h = this.cfg.hint;
     st.scope.misses += 1;
@@ -397,25 +426,29 @@ export class Game {
     return [{ type: 'scopeMiss', misses: 2, from: before, chain: st.chain, mult: this.multiplier }, { type: 'scopeEnd', reason: 'miss' }, ...(qb.changed ? [this.questEvent(qb)] : [])];
   }
 
-  remove(i, j, now, { skill = null } = {}) {
+  remove(i, j, now, opts = {}) { return this.removeGroup([i, j], now, opts); }
+
+  /** 1 手で cells(昇順。Pair は 2 個、LINE TEN は 2〜4 個)を消す。 */
+  removeGroup(cells, now, { skill = null } = {}) {
     const st = this.stage, b = st.board, cfg = this.cfg;
-    const before = removePair(i, j, b);
+    const i = cells[0], j = cells[cells.length - 1];
+    const before = removeCellsOn(cells, b);
     const clearedRows = rows(before).map((r, k) => (r.every((c) => c === 0) ? k : -1)).filter((k) => k >= 0);
     const after = collapseRows(before);
     const events = [];
 
     // Hint の約束の確認(得点の前に Chain を調整する)
-    const hinted = !!st.hintPair && st.hintPair[0] === i && st.hintPair[1] === j;     // HINT で示された Pair
+    const hinted = !!st.hintPair && st.hintPair.length === cells.length && st.hintPair.every((p, k) => p === cells[k]);     // HINT で示された組
     let scoped = false, scopeBroken = false;
     if (st.scope) {
-      if (st.scope.tile === i || st.scope.tile === j) scoped = true;
+      if (cells.includes(st.scope.tile)) scoped = true;
       else { scopeBroken = true; st.chain = Math.floor(st.chain * cfg.hint.scopeBreakRatio); }
       st.scope = null;
     }
     st.hintPair = null;
 
     // 難しい道・速さの倍率
-    const info = pathInfo(b, i, j);
+    const info = cells.length === 2 ? pathInfo(b, i, j) : groupInfo(b, cells);
     const diffFull = difficultyMult(cfg.difficulty, info);
     // CLASSIC: 難しさの倍率は無く、横の隣どうし以外に小さな定額の加点
     const pathBonus = this.classic && info && info.kind !== 'adjacent' ? cfg.classic.pathBonus : 0;
@@ -442,27 +475,30 @@ export class Game {
     }
     const feverMult = st.fever ? cfg.fever.pointMult : 1;
     const hintedRatio = hinted ? cfg.score.hintedPairRatio : 1;
-    const pairPoints = Math.round(cfg.score.pairBase * diff.mult * mult * speed.mult * feverMult * hintedRatio) + pathBonus;
+    const sizeMult = this.line ? (cfg.line.sizeMult[cells.length] ?? 1) : 1;   // LINE TEN: 3 個 ×2.5、4 個 ×5
+    const pairPoints = Math.round(cfg.score.pairBase * sizeMult * diff.mult * mult * speed.mult * feverMult * hintedRatio) + pathBonus;
     const rowPoints = Math.round(cfg.score.rowClear * clearedRows.length * clearedRows.length * mult * feverMult);
     // DIGIT CLEAR: この 1 手で Board から消え切った数字(残りが 0 になった数字)
     const left = new Set(numbers(after));
-    const digitsCleared = [...new Set([b[i], b[j]])].filter((d) => !left.has(d)).sort();
+    const digitsCleared = [...new Set(cells.map((p) => b[p]))].filter((d) => !left.has(d)).sort();
     const digitPoints = Math.round((this.classic ? cfg.classic.digitClear : cfg.score.digitClear) * digitsCleared.length * mult * feverMult);
     const points = pairPoints + rowPoints + digitPoints;
     st.stageScore += points;
     this.run.score += points;
-    st.selected = null;
+    st.selected = null; st.picks = [];
     st.board = after;
-    st.history.push({ type: 'remove', board: b, i, j, points, chain: st.chain, chainBefore, mult, clearedRows, digitsCleared, hinted, scoped });
+    st.history.push({ type: 'remove', board: b, i, j, cells, points, chain: st.chain, chainBefore, mult, clearedRows, digitsCleared, hinted, scoped });
     const otherDigitClearedBefore = st.firstDigitCleared !== null;
     if (digitsCleared.length && st.firstDigitCleared === null) st.firstDigitCleared = digitsCleared[0];
     const questUpdate = updateQuest(st.quest, { type: 'remove', chain: st.chain, chainBefore, digitsCleared, path: info, otherDigitClearedBefore });
 
     const labels = skill ? ['SNIPE SHOT'] : [...diff.labels];
+    if (cells.length === 3) labels.unshift('TRIPLE');
+    if (cells.length === 4) labels.unshift('QUAD');
     if (scoped) labels.push('SCOPE');
     if (hinted) labels.push('HINTED');
     events.push({
-      type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints, digitPoints, digitsCleared,
+      type: 'remove', i, j, cells, digits: cells.map((p) => b[p]), sizeMult, a: b[i], b: b[j], points, pairPoints, rowPoints, digitPoints, digitsCleared,
       chain: st.chain, mult, heat: this.heat, clearedRows, boardBefore: before, board: after,
       path: info, diffMult: diff.mult, pathBonus, labels, speed: speed.tier, speedMult: speed.mult, elapsed, classic: this.classic,
       fever: !!st.fever, feverExtendMs, feverUntil: st.fever?.until ?? null, hinted, scoped, scopeBroken, skill,
@@ -484,8 +520,8 @@ export class Game {
   afterBoardChange() {
     const st = this.stage;
     if (isCleared(st.board)) return this.stageClear();
-    if (this.classic && validPairs(st.board).length === 0) {
-      if (st.addsLeft > 0) return [{ type: 'deadEnd', addsLeft: st.addsLeft }];
+    if ((this.classic || this.line) && this.moves(st.board).length === 0) {
+      if (st.addsLeft > 0 || this.line) return [{ type: 'deadEnd', addsLeft: st.addsLeft, line: this.line }];   // LINE は知らせるだけ(Add・Hint・GIVE UP はプレイヤーが選ぶ)
       return this.stageFailed('deadEnd', this.cfg.classic.failKeepRatio);
     }
     return [];
@@ -541,8 +577,8 @@ export class Game {
     const st = this.stage, cfg = this.cfg, h = cfg.hint;
     if (!st || st.status !== 'play') return [];
     const tier = this.hintTier;
-    const pairs = validPairs(st.board);
-    st.selected = null; st.skill = null;
+    const pairs = this.moves(st.board);
+    st.selected = null; st.picks = []; st.skill = null;
 
     if (pairs.length === 0 && this.classic) {
       // CLASSIC: Dead End は知らせてあるので、罰も使用回数の消費も無い
@@ -685,6 +721,7 @@ export class Game {
 
   /** 感想戦のために Stage の記録を Run に残す(直近 6 Stage まで)。 */
   pushReview(stage, cleared) {
+    if (this.line) return;   // 感想戦は Pair の手を評価する作り。LINE(試作)では残さない
     const st = this.stage;
     if (!this.run.reviews) this.run.reviews = [];
     this.run.reviews.push({ stage, cleared, history: st.history, stageScore: st.stageScore, maxChain: st.maxChain ?? 0 });

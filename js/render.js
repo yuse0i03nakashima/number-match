@@ -51,10 +51,11 @@ export class Renderer {
   }
 
   // Board 全体を作り直す。selected / hintPair / flash / scope の見た目もここで付ける。
-  renderBoard(board, { selected = null, hintPair = null, flashPairs = null, scopeTile = null, addedFrom = null } = {}) {
+  renderBoard(board, { selected = null, picks = [], hintPair = null, flashPairs = null, scopeTile = null, addedFrom = null } = {}) {
     const flashSet = new Set();
-    if (flashPairs) for (const [a, b] of flashPairs) { flashSet.add(a); flashSet.add(b); }
-    const sight = selected !== null && board[selected] ? sightLines(board, selected) : null;
+    if (flashPairs) for (const g of flashPairs) for (const a of g) flashSet.add(a);
+    const focus = selected !== null ? selected : picks.length ? picks[picks.length - 1] : null;   // 視線はいちばん新しい選択から
+    const sight = focus !== null && board[focus] ? sightLines(board, focus) : null;
     const raySet = new Set(sight?.ray), reachSet = new Set(sight?.reach);
     const frag = document.createDocumentFragment();
     board.forEach((c, p) => {
@@ -65,10 +66,10 @@ export class Renderer {
       el.textContent = c === 0 ? '' : String(c);
       el.setAttribute('role', 'gridcell');
       if (c === 0) el.tabIndex = -1;
-      if (selected === p) el.classList.add('selected');
+      if (selected === p || picks.includes(p)) el.classList.add('selected');
       if (raySet.has(p)) el.classList.add('ray');
       if (reachSet.has(p)) el.classList.add('reach');
-      if (hintPair && (hintPair[0] === p || hintPair[1] === p)) el.classList.add('hint');
+      if (hintPair && hintPair.includes(p)) el.classList.add('hint');
       if (flashSet.has(p)) el.classList.add('flash');
       if (scopeTile === p) el.classList.add('scope');
       if (addedFrom !== null && p >= addedFrom) {
@@ -136,7 +137,7 @@ export class Renderer {
     const run = game.run, st = game.stage, def = game.stageDef;
     if (!run || !st || !def) return;
     this.$('hud-stage-label').textContent = `STAGE ${String(def.stage).padStart(2, '0')}`;
-    this.$('hud-world-label').textContent = game.cfg.vsMode ? `vs · ${def.cellsCount} cells` : `world ${game.worldOf(run.stageIndex) + 1} · ${def.cellsCount} cells${game.classic ? ' · classic' : ''}`;
+    this.$('hud-world-label').textContent = game.cfg.vsMode ? `vs · ${def.cellsCount} cells` : `world ${game.worldOf(run.stageIndex) + 1} · ${def.cellsCount} cells${game.classic ? ' · classic' : game.line ? ' · line' : ''}`;
     this.$('hud-score').textContent = run.score.toLocaleString('en-US');
     // CLASSIC に Chain・Heart は無い
     this.$('hud-chain').hidden = game.classic;
