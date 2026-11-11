@@ -93,7 +93,7 @@ async function boot() {
     const card = ui.showOverlay(`
       <div class="eyebrow">slot</div>
       <h1>Pause</h1>
-      <div class="ja">Coin ${fmt(game.coins)} · 払い戻し率の目安は約 90%。BONUS の役は揃えるまで持ち越す。</div>
+      <div class="ja">Coin ${fmt(game.coins)} · 払い戻し率の目安は約 160%(勝ちやすい)。BONUS の役は揃えるまで持ち越す。</div>
       <div class="actions">
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
@@ -691,6 +691,7 @@ async function boot() {
     if (titleTab === 'slot') { showSlotTitle(); return; }
     if (titleTab === 'vs') { showVsTitle(); return; }
     const canResume = game.run && game.stage && (game.stage.status === 'play' || game.stage.status === 'clear' || game.stage.status === 'failed');
+    const daily = game.dailyStatus(Date.now());
     const worlds = [];
     const total = Math.ceil(stages.length / CONFIG.worldSize);
     for (let w = 0; w < total; w++) {
@@ -716,6 +717,7 @@ async function boot() {
         <div class="row"><span class="k">Rank</span><span class="v">${rankSummary()}</span></div>
       </div>
       <div class="actions">
+        ${daily.available ? `<button class="btn btn-primary daily" id="ov-daily">DAILY BONUS · Day ${daily.day} · +${fmt(daily.reward)} coin</button>` : `<div class="meta">Daily Bonus · Day ${daily.day} 受け取り済み(次は朝 ${CONFIG.daily.resetHour} 時以降)</div>`}
         ${canResume ? `<button class="btn btn-primary" id="ov-resume">Continue (STAGE ${pad2(game.stageDef.stage)})</button>` : ''}
         <button class="btn ${canResume ? 'btn-ghost' : 'btn-primary'}" id="ov-new">New Game</button>
         <div class="worlds">${worlds.join('')}</div>
@@ -724,6 +726,15 @@ async function boot() {
       </div>
       <div class="meta">rules verified</div>`);
     card.querySelector('#ov-records').onclick = showRecords;
+    card.querySelector('#ov-daily')?.addEventListener('click', () => {
+      ensureAudio();
+      const ev = game.claimDaily(Date.now());
+      if (!ev) { showTitle(); return; }
+      sound.coin?.(); fx.fireworks(ev.day >= ev.days ? 6 : 3); punch();
+      fx.floatText(innerWidth / 2, innerHeight * 0.4, `+${fmt(ev.reward)} coin`, { color: PALETTE.amber, size: 40, dy: -30, life: 1.8 });
+      ui.toast(`DAILY BONUS Day ${ev.day}: +${fmt(ev.reward)} coin(合計 ${fmt(ev.coins)})。連続 ${ev.streak} 日`, 3000);
+      showTitle();
+    });
     bindTabs(card);
     card.querySelector('#ov-resume')?.addEventListener('click', () => {
       ensureAudio();
@@ -777,7 +788,7 @@ async function boot() {
         <button class="btn btn-primary" id="ov-play">${slot.bonus ? `PLAY(${slot.bonus.kind === 'big' ? 'BIG' : 'REG'} BONUS 継続中)` : 'PLAY'}</button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
       </div>
-      <div class="meta">${game.coins < CONFIG.slot.bets[0] ? 'Coin が無い。THE TEN で Stage を Clear すると貯まる' : 'payout ≈ 90%'}</div>`);
+      <div class="meta">${game.coins < CONFIG.slot.bets[0] ? 'Coin が無い。THE TEN で Stage を Clear するか、Title の DAILY BONUS で貯まる' : 'payout ≈ 160%'}</div>`);
     bindTabs(card);
     card.querySelector('#ov-play').onclick = showSlot;
     card.querySelector('#ov-rules').onclick = showRules;

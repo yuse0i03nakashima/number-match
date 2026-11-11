@@ -83,7 +83,7 @@ export const CONFIG = {
     bpm: 124,                        // 生成 BGM のテンポ(1 曲目 dance)
     sweetBpm: 150,                   // 2 曲目 sweet のテンポ(参考 2 曲は 128 と 145。ユーザー希望でより速く)
     songs: ['dance', 'sweet'],       // Stage ごとに順に使う曲。Stage 1 = dance、Stage 2 = sweet、Stage 3 = dance、…
-    sweetMelody: 'ours',             // sweet の旋律(melodies.js の候補名。lab.html で聴き比べる)。ours = R(参考曲)を土台にした自作
+    sweetMelody: 'cm',               // sweet の旋律(melodies.js の候補名。lab.html で聴き比べる)。cm = R(参考曲の書き起こし。ユーザー判断で採用: 原曲とはかなり違うため)。ours = R を土台にした自作
   },
   // VS: 2 台のスマホで同じ Board を同時に遊び、得点を競う(通信は vs.js)
   vs: {
@@ -96,8 +96,8 @@ export const CONFIG = {
   // お題(Quest): Stage ごとに 1 つ。達成で Bonus
   quest: {
     bonus: 500,              // 達成の Bonus(Chain 倍率は掛けない)
-    chainTarget: 7,          // 「Add なしで N Chain」の N(Pair の数が少なければそこまで)
-    diagonalTarget: 2,       // 「斜めで N 回消せ」の N
+    chainTarget: 10,         // 「Chain を途切れさせずに N 回」の N(Pair の数が少なければそこまで)。7 → 10(ユーザー「もう少し難しくてもよい」2026-11-12)
+    diagonalTarget: 3,       // 「斜めで N 回消せ」の N。2 → 3
   },
   // 温存の投資: World で残した Add を次の World に持ち込む
   invest: {
@@ -138,14 +138,20 @@ export const CONFIG = {
     defaultBet: 10,
     linesFor: (bet) => (bet >= 5 ? 5 : bet >= 3 ? 3 : 1),   // 賭け枚数 → 有効ライン(1: 中段、3: 横 3 本、5: 斜めも)
     pullIn: { default: 4, ten: 10, pairStar: 10 },   // 引き込み: 押した位置から何コマ先まで寄せるか。小役は広く、BONUS と同じ数字は目押しが要る
-    payout: { big: 30, reg: 12, samePerDigit: 2, ten: 6, pairStar: 2 },   // 1 ライン・1 枚あたりの枚数(賭け枚数を掛ける)
-    table: { big: 1 / 550, reg: 1 / 300, same: 1 / 90, ten: 1 / 18, pairStar: 1 / 18 },   // 通常時の役の確率。BONUS の役は揃えるまで持ち越す
+    payout: { big: 40, reg: 15, samePerDigit: 2, ten: 8, pairStar: 3 },   // 1 ライン・1 枚あたりの枚数(賭け枚数を掛ける)
+    table: { big: 1 / 420, reg: 1 / 230, same: 1 / 70, ten: 1 / 14, pairStar: 1 / 14 },   // 通常時の役の確率。BONUS の役は揃えるまで持ち越す
+    // 払い戻し率(simulate、5 枚賭け 30000 回): でたらめ押し 1.64、完璧 1.63。前(big 30 / reg 12 / ten 6 / pairStar 2、1/550 1/300 1/90 1/18)は 1.17。ユーザー「もっとガンガン稼げてもよい」(2026-11-12)
     bonus: {
       big: { games: 30, table: { same: 1 / 12, ten: 1 / 2.5, pairStar: 1 / 5 } },
       reg: { games: 15, table: { same: 1 / 25, ten: 1 / 3, pairStar: 1 / 5 } },
     },
     notice: { onBonus: 0.7, fake: 0.03 },   // 予告ランプ: BONUS の役のとき光る確率と、ガセで光る確率
     spinStepMs: 45,          // リールが 1 コマ進む時間
+  },
+  // デイリーボーナス: 1 日 1 回、Title で Coin を受け取る。連続した日は Day が進む(7 日で一巡)。日付の区切りは朝 resetHour 時
+  daily: {
+    rewards: [300, 400, 500, 600, 800, 1000, 1500],
+    resetHour: 4,
   },
   audio: {
     masterVolume: 0.35,
