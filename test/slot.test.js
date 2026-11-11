@@ -76,7 +76,7 @@ test('Slot: 役ありの回は、引き込み範囲で押せば揃い、範囲�
 test('simulate: 払い戻し率はおおむね 0.8〜1.0(目押しなし・完璧の両方)', () => {
   for (const press of ['random', 'perfect']) {
     const r = simulate(CONFIG.slot, 6000, press, lcg(2024));
-    assert.ok(r.rtp > 0.6 && r.rtp < 1.25, `${press}: ${r.rtp}`);
+    assert.ok(r.rtp > 1.3 && r.rtp < 2.0, `${press}: ${r.rtp}`);   // 2026-11-12 から勝ちやすい設定(目安 1.6)。config.js の slot のコメント参照
   }
 });
 

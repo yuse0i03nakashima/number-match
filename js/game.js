@@ -47,6 +47,7 @@ export class Game {
     this.slots = Object.fromEntries(MODES.map((m) => [m, { progress: emptyProgress(), run: null }]));
     this.coins = 0;          // Coin(モード共通。ショップとスロットで使う)
     this.slotStats = {};     // スロットの記録(slot.js が使う。ここでは保存するだけ)
+    this.daily = { last: null, streak: 0 };   // デイリーボーナス: 最後に受け取った日の鍵と、連続日数
     this.load();
   }
 
@@ -65,6 +66,7 @@ export class Game {
         if (MODES.includes(data.mode)) this.mode = data.mode;
         this.coins = Math.max(0, Math.floor(data.coins ?? 0));
         this.slotStats = data.slotStats ?? {};
+        if (data.daily) this.daily = { last: data.daily.last ?? null, streak: Math.max(0, Math.floor(data.daily.streak ?? 0)) };
       } else {
         // 旧形式(モードが無いころの保存)は NORMAL の記録として読む。relax の印は捨てる
         if (data.progress) { const { relax, ...p } = data.progress; this.slots.normal.progress = { ...emptyProgress(), ...p }; }
@@ -74,7 +76,7 @@ export class Game {
   }
   save() {
     try {
-      this.storage?.setItem(this.cfg.storageKey, JSON.stringify({ mode: this.mode, slots: this.slots, coins: this.coins, slotStats: this.slotStats }));
+      this.storage?.setItem(this.cfg.storageKey, JSON.stringify({ mode: this.mode, slots: this.slots, coins: this.coins, slotStats: this.slotStats, daily: this.daily }));
     } catch { /* 保存できない環境では無視 */ }
   }
 
@@ -88,6 +90,33 @@ export class Game {
   setMode(mode) { if (MODES.includes(mode)) { this.mode = mode; this.save(); } }
   /** Coin を足す(負の値で引く)。残高は 0 未満にならない。 */
   addCoins(n) { this.coins = Math.max(0, Math.floor(this.coins + n)); this.save(); return this.coins; }
+
+  // ---------- デイリーボーナス ----------
+  /** その時刻が属する「日」の鍵。朝 resetHour 時で切り替わる(夜中に 2 回受け取れないように) */
+  dailyKey(now = Date.now()) {
+    const d = new Date(now - (this.cfg.daily?.resetHour ?? 4) * 3600e3);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  /** いま受け取れるか、何日目か、いくらか。 */
+  dailyStatus(now = Date.now()) {
+    const rewards = this.cfg.daily?.rewards ?? [];
+    const key = this.dailyKey(now);
+    const claimed = this.daily.last === key;
+    const continued = this.daily.last === this.dailyKey(now - 86400e3);   // 前の日に受け取っていれば連続
+    const streak = claimed ? this.daily.streak : continued ? this.daily.streak + 1 : 1;
+    const day = rewards.length ? (streak - 1) % rewards.length : 0;
+    return { available: !claimed && rewards.length > 0, day: day + 1, days: rewards.length, reward: rewards[day] ?? 0, streak, key };
+  }
+  /** 受け取る。すでに受け取った日なら null。 */
+  claimDaily(now = Date.now()) {
+    const s = this.dailyStatus(now);
+    if (!s.available) return null;
+    this.daily = { last: s.key, streak: s.streak };
+    this.coins = Math.max(0, Math.floor(this.coins + s.reward));
+    this.save();
+    return { type: 'daily', day: s.day, days: s.days, reward: s.reward, streak: s.streak, coins: this.coins };
+  }
   /** ショップの品物と値段(いまのモード)。 */
   get shopPrices() { return this.cfg.shop[this.mode] ?? {}; }
   /** いま買える品物の一覧 [{ item, price, can }]。can は Coin が足りて、かつ買う意味がある(残り 0 など)とき。 */

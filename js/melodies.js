@@ -124,7 +124,7 @@ const OURS_PROGRESSION = [
 const OURS_STYLE = { lead: 'bright', hatOff: true, octaveDown: true, clap: true, pump: true, stabs: false, bass: 'eighths', kick: 'tight', padGain: 0.04 };
 
 export const SWEET_MELODIES = {
-  cm: { name: 'R 参考曲', desc: '広告の曲の 15 秒を画像で読んだ書き起こし(確認用)。冒頭 1 小節 + Am → G | Em7 | Am | Fmaj7 の 4 小節ループ × 2、BPM 144、調 C。測定した音色(軽いユニゾンのリード + 上下のオクターブ、短いキック、クラップ、8 分のベース、サイドチェイン)', notes: CM, length: CM_LEN, progression: CM_PROGRESSION, bpm: 144, tonic: 60, style: CM_STYLE },
+  cm: { name: 'R 参考曲', desc: '広告の曲の 15 秒を画像で読んだ書き起こし(確認用)。冒頭 1 小節 + vi → V | iii7 | vi | IVmaj7 の 4 小節ループ × 2、BPM 144、調はゲームと同じ E。測定した音色(軽いユニゾンのリード + 上下のオクターブ、短いキック、クラップ、8 分のベース、サイドチェイン)', notes: CM, length: CM_LEN, progression: CM_PROGRESSION, bpm: 144, style: CM_STYLE },   // 調はゲームと同じ E(原曲の C より高い。ユーザー「原曲はもう少しキーが高い」)。lab では調の選択で C にも戻せる
   vocal: { name: 'A 歌メロ', desc: '3 度ずつ跳んで 9 度に触れ、短短長で下りる。2 小節目は切ない音を長く', notes: VOCAL },
   anthem: { name: 'B アンセム', desc: 'タ・タ・ターンを 2 回。2 小節の問いと 2 小節の答え', notes: ANTHEM },
   riff: { name: 'C リフ', desc: '3 音の上がるモチーフを 5 つおきに置いて拍とずらす。てっぺんは共通', notes: RIFF },
