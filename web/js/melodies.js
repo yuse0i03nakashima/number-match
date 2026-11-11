@@ -131,5 +131,5 @@ export const SWEET_MELODIES = {
   hook: { name: 'D フック', desc: '参考曲の作り(5 度から主音へ下る、16 分 2 つの刻み)をそのまま', notes: HOOK },
   ours: { name: 'S 自作(R ベース)', desc: 'R の進行・テンポ・拍の性格・音色をもとに旋律を自作。フック「ミ ファミ レ ド シー レ ソー」(半音の動きを毎小節に)、調は THE TEN の E、BPM 148、明るめの電子音', notes: OURS, progression: OURS_PROGRESSION, bpm: 148, style: OURS_STYLE },
 };
-export const DEFAULT_SWEET_MELODY = 'ours';
+export const DEFAULT_SWEET_MELODY = 'cm';
 export const SWEET_MELODY_LEN = 8 * 16;
