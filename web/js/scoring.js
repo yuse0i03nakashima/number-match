@@ -96,3 +96,17 @@ export function sightLines(board, pos) {
   }
   return { ray, reach };
 }
+
+/**
+ * LINE TEN: 3 つ以上の組の道の情報。間の組の数字を空マス扱いにして両端の道を見て、
+ * 空マスの数から組の数字のぶんを引く(2 つなら pathInfo と同じ)。
+ */
+export function groupInfo(board, cells) {
+  if (cells.length === 2) return pathInfo(board, cells[0], cells[1]);
+  const inner = new Set(cells.slice(1, -1));
+  const blanked = board.map((c, p) => (inner.has(p) ? 0 : c));
+  const info = pathInfo(blanked, cells[0], cells[cells.length - 1]);
+  if (!info) return null;
+  const gap = Math.max(0, info.gap - (cells.length - 2));
+  return { kind: info.kind === 'line' && gap === 0 ? 'adjacent' : info.kind, gap };
+}
