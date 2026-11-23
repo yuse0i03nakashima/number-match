@@ -114,6 +114,8 @@ export class Game {
       if (st.addsUsed === 0 && !(st.addsBought)) { st.addsLeft = cfg.hard.addsPerStage; st.addsTotal = cfg.hard.addsPerStage; }
       if (st.hintsUsed === 0 && !(st.hintsBought)) st.hintsLeft = cfg.hint.perStage;
       if (st.chain > 0) { st.lastRemoveAt = now; st.decayed = 0; }
+      // Hint 0 の札を選んだら「Hint を使わずに Clear」のお題は意味が無いので出し直す
+      if (cfg.hint.perStage === 0 && st.quest?.type === 'noHint') st.quest = makeQuest(cfg, this.stageDef.stage, st.board, { exclude: ['noHint'] });
     }
     this.run.lives = Math.min(this.run.lives, cfg.lives.max);
     this.save();
@@ -334,7 +336,7 @@ export class Game {
       status: 'play',        // play | clear | failed | runOver | complete
       history: [],           // 感想戦用の手の記録(review.js が読む)
       maxChain: chain,       // この Stage の最高 Chain
-      quest: makeQuest(this.cfg, def.stage, variant.cells, { exclude: this.classic ? ['chain', 'noHint'] : [] }),   // この Stage のお題(CLASSIC に Chain のお題は無く、Hint なしは Perfect と重なるので出さない)
+      quest: makeQuest(this.cfg, def.stage, variant.cells, { exclude: this.classic ? ['chain', 'noHint'] : this.cfg.hint.perStage === 0 ? ['noHint'] : [] }),   // Hint が 0 の札のときは「Hint を使わずに」を出さない   // この Stage のお題(CLASSIC に Chain のお題は無く、Hint なしは Perfect と重なるので出さない)
       firstDigitCleared: null,
     };
     this.save();
