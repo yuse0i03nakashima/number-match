@@ -115,6 +115,7 @@ async function boot() {
     fxScale = on ? c.fxScale : 1;
     fx.setCalm(on);
     document.body.classList.toggle('classic', on);
+    document.body.classList.toggle('hard', game.hard);
   }
   // 最初のタップで AudioContext ができたら BGM をつなぐ(ensure は何度呼んでもよい)
   const ensureAudio = () => { if (sound.ensure()) bgm.attach(sound.ctx); };
@@ -327,6 +328,8 @@ async function boot() {
         case 'stageFailed': if (vs.playing) vsFinish('stuck'); else await onStageFailed(ev); break;
         case 'runOver': if (vs.playing) vsFinish('stuck'); else await onRunOver(ev); break;
         case 'complete': showComplete(ev); break;
+        case 'gambit': showGambit(ev.options); break;
+        case 'gambitChosen': ui.toast(`GAMBIT「${ev.gambit.name}」: ${ev.gambit.up} / ${ev.gambit.down}`, 3000); break;
         default: break;
       }
     }
@@ -528,7 +531,8 @@ async function boot() {
         ${ev.worldEnd && !ev.isLast && ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">各 Stage で Add +${ev.investAdds}</span></div>` : ''}
         ${ev.worldEnd && !ev.isLast && !ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">開始 Chain +${ev.investChain}${ev.investHearts ? ` · Heart +${ev.investHearts}` : ''}</span></div>` : ''}
         <div class="row"><span class="k">この Stage の最高得点${ev.coinUsed ? '(Coin を使ったので更新なし)' : ''}</span><span class="v${ev.stageBestUpdated ? ' plus' : ''}">${fmt(ev.stageBest)}${ev.stageBestUpdated && ev.prevBest ? ' NEW!' : ''}</span></div>
-        <div class="row"><span class="k">Coin</span><span class="v plus">+${fmt(ev.coinsGained)} → ${fmt(ev.coins)}</span></div>
+        <div class="row"><span class="k">Coin${ev.hard ? `(×${CONFIG.hard.coinMult}${ev.gambit && ev.gambit.id === 'glass' ? ' ×2' : ev.gambit && ev.gambit.id === 'reserve' ? ' ×0.5' : ''})` : ''}</span><span class="v plus">+${fmt(ev.coinsGained)} → ${fmt(ev.coins)}</span></div>
+        ${ev.gambit ? `<div class="row"><span class="k">GAMBIT</span><span class="v">${ev.gambit.name}</span></div>` : ''}
         <div class="row"><span class="k">World の Rank</span><span class="v">${rankSummaryWorld(game.worldOf(game.run.stageIndex))}</span></div>
         ${ev.classic ? '' : `<div class="row"><span class="k">最高倍率(この Stage / Run)</span><span class="v">×${ev.maxMult.toFixed(1)} / ×${ev.runMaxMult.toFixed(1)}</span></div>`}
         <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
@@ -711,7 +715,9 @@ async function boot() {
       ${modeTabs()}
       <div class="ja mode-desc">${game.classic
         ? '本家に近い遊び方。倍率・制限時間・Heart は無く、得点は定額。Add は 5 回で、残すほど Bonus。Dead End はすぐ知らせる。'
-        : 'Chain 倍率と FEVER で高得点を狙う遊び方。Chain は時間で減り、Heart が尽きると Run 終了。'}</div>
+        : game.hard
+          ? `NORMAL の高難易度。Add ${CONFIG.hard.addsPerStage} 回・Heart ${CONFIG.hard.rules.lives.max}・Hint ${CONFIG.hard.rules.hint.perStage} 回で、Chain は速く減る。見返りは得点 ×${CONFIG.hard.pointMult}・Coin ×${CONFIG.hard.coinMult}。World の始めに GAMBIT(見返りと代償が対になった札)を 1 枚選ぶ。`
+          : 'Chain 倍率と FEVER で高得点を狙う遊び方。Chain は時間で減り、Heart が尽きると Run 終了。'}</div>
       <div class="rows">
         <div class="row"><span class="k">Coin</span><span class="v">${fmt(game.coins)}</span></div>
         <div class="row"><span class="k">Best Score</span><span class="v">${fmt(game.progress.bestScore)}</span></div>
@@ -745,6 +751,7 @@ async function boot() {
       if (st.status === 'failed') { handle(game.retryStage()); return; }
       game.resume(Date.now());
       ui.hideOverlay(); redraw();
+      if (game.pendingGambit) showGambit(game.pendingGambit);
     });
     card.querySelector('#ov-new').onclick = () => { ensureAudio(); handle(game.newRun(0)); };
     card.querySelectorAll('[data-world]').forEach((b) => b.addEventListener('click', () => {
@@ -753,12 +760,28 @@ async function boot() {
     card.querySelector('#ov-rules').onclick = showRules;
   }
 
-  // Title のタブ(NORMAL / CLASSIC / SLOT)
+  // HARD: World の始めに GAMBIT を 1 枚選ぶ(選ぶまで Board は触れない)
+  function showGambit(options) {
+    const card = ui.showOverlay(`
+      <div class="eyebrow">hard · world ${game.worldOf(game.run.stageIndex) + 1}</div>
+      <h1>GAMBIT</h1>
+      <div class="ja">この World の ${CONFIG.worldSize} Stage に効く札を 1 枚選ぶ。見返りと代償が対になっている。</div>
+      <div class="gambits">${options.map((g) => `<button class="btn btn-ghost gambit" data-gambit="${g.id}"><b>${g.name}</b><span class="up">＋ ${g.up}</span><span class="down">－ ${g.down}</span></button>`).join('')}</div>`);
+    card.querySelectorAll('[data-gambit]').forEach((b) => b.addEventListener('click', () => {
+      ensureAudio(); sound.select?.(); punch();
+      const evs = game.chooseGambit(b.dataset.gambit, Date.now());
+      ui.hideOverlay(); redraw();
+      handle(evs);
+    }));
+  }
+
+  // Title のタブ(NORMAL / CLASSIC / HARD / SLOT / VS)
   function modeTabs() {
     const on = (t) => (titleTab === t ? 'on' : '');
     return `<div class="mode-tabs" role="tablist">
         <button class="mode-tab ${on('normal')}" data-tab="normal" role="tab">NORMAL</button>
         <button class="mode-tab ${on('classic')}" data-tab="classic" role="tab">CLASSIC</button>
+        <button class="mode-tab ${on('hard')} ${game.hardUnlocked ? '' : 'locked'}" data-tab="hard" role="tab">HARD</button>
         <button class="mode-tab ${on('slot')}" data-tab="slot" role="tab">SLOT</button>
         <button class="mode-tab ${on('vs')}" data-tab="vs" role="tab">VS</button>
       </div>`;
@@ -767,6 +790,7 @@ async function boot() {
     card.querySelectorAll('.mode-tab').forEach((b) => b.addEventListener('click', () => {
       const t = b.dataset.tab;
       if (t === titleTab) return;
+      if (t === 'hard' && !game.hardUnlocked) { ui.toast(`HARD は NORMAL で World ${CONFIG.hard.unlockStage / CONFIG.worldSize} を制覇すると開放`, 2600); return; }
       titleTab = t;
       if (t !== 'slot' && t !== 'vs') { game.setMode(t); applyMode(); }
       showTitle();
@@ -806,7 +830,7 @@ async function boot() {
       return `<div class="row"><span class="k">STAGE ${pad2(s.stage)} <small>${s.cellsCount} cells</small></span><span class="v">${b ? fmt(b) : '·'} <span class="ranks"><span class="${r ?? ''}">${r ?? '·'}</span></span> <span class="rec-stars">${'★'.repeat(st)}${'☆'.repeat(3 - st)}</span></span></div>`;
     }).join('');
     const card = ui.showOverlay(`
-      <div class="eyebrow">records · ${game.classic ? 'classic' : 'normal'}</div>
+      <div class="eyebrow">records · ${game.mode}</div>
       <h1>Records</h1>
       <div class="ja">Stage ごとの最高得点、Rank、Star。Coin やショップで買った Add・Hint では変わらない、腕前の記録。</div>
       <div class="rows rec-rows">${rows}</div>
@@ -843,6 +867,7 @@ async function boot() {
         <b>CLASSIC モード</b>(Title のタブで切り替え。記録は NORMAL と別): 本家に近い遊び方。Chain 倍率・ゲージ・FEVER・Speed・Heart は無く、1 Pair ${c.score.pairBase} 点(横の隣どうし以外は +${c.classic.pathBonus})、Line ${c.score.rowClear} × 行数の 2 乗、DIGIT CLEAR ${c.classic.digitClear}。Add は ${c.classic.addsPerStage} 回、Hint は常に Pair を 1 組示す。Dead End はすぐ知らせ、Add も無ければ Stage 失敗(得点は半分残り、新しい Board でやり直し)。Perfect は Add も Hint も使わずに Clear。World で残した Add ${c.classic.investAddsPer} 回ごとに、次の World の各 Stage で Add +1(上限 +${c.classic.investAddsCap})。<br>
         <b>Quest</b>: Stage ごとに 1 つお題が出る(「3 を最初に消し切れ」「Add なしで 7 Chain」「斜めで 2 回消せ」「Hint を使わずに Clear」)。達成で +${c.quest.bonus}。どのお題も、その Board で達成できることを確かめてから出している。<br>
         <b>温存の投資</b>: World(5 Stage)で残した Add の回数が、次の World の開始 Chain(1 回ごとに +${c.invest.chainPerAdd}、上限 +${c.invest.chainCap})と Heart(${c.invest.addsPerHeart} 回ごとに +1)になる。<br>
+        <b>HARD モード</b>(NORMAL で World ${c.hard.unlockStage / c.worldSize} を制覇すると開放。記録は別枠): Add ${c.hard.addsPerStage} 回、Heart ${c.hard.rules.lives.max}、Hint ${c.hard.rules.hint.perStage} 回で、Chain は速く減る。見返りは得点 ×${c.hard.pointMult}(Rank の基準も ×${c.hard.pointMult})と Coin ×${c.hard.coinMult}。World の始めに GAMBIT を ${c.hard.gambitOffer} 枚から 1 枚選ぶ。見返りと代償が対になった札で、その World の ${c.worldSize} Stage に効く(例: BLAZE は FEVER が 2 倍長いが Hint 0、GLASS は Coin 2 倍だが Heart 1)。<br>
         <b>Coin とショップ</b>: Stage を Clear すると、その Stage の得点がそのまま Coin として貯まる(Best Score とは別の累計。スロットでも使う)。Hint が尽きると HINT ボタンが BUY HINT(NORMAL ${fmt(c.shop.normal.hint)} / CLASSIC ${fmt(c.shop.classic.hint)} coin)、Add が尽きると ADD ボタンが BUY ADD(${fmt(c.shop.normal.add)} / ${fmt(c.shop.classic.add)} coin)に変わる。Heart はメニューから ${fmt(c.shop.normal.heart)} coin(NORMAL だけ)。買った Add・Hint は温存 Bonus と投資に数えない。買った Add を使えば Perfect は失う。<br>
         <b>SLOT</b>(Title のタブ): Coin を賭けるパチスロ。賭けは好きな枚数(1 枚以上、残高まで)。1〜2 枚は中段のみ、3〜4 枚で横 3 本、5 枚以上で斜めも 5 本。役は 1 ライン・1 枚あたり、TEN TEN TEN で BIG BONUS(${c.slot.payout.big} 枚 + ${c.slot.bonus.big.games} 回の高確率)、★★★ で REG BONUS(${c.slot.payout.reg} 枚 + ${c.slot.bonus.reg.games} 回)、同じ数字 3 つで数字 × ${c.slot.payout.samePerDigit}、合計 10 で ${c.slot.payout.ten}、足して 10 の Pair + ★ で ${c.slot.payout.pairStar}。払い戻しは賭け枚数を掛け、揃ったうち一番高い 1 本だけ。役は START の時点で決まっていて、リールを止めると押した位置から ${c.slot.pullIn.default} コマ先まで引き込む(合計 10 と Pair + ★ はもっと広い)。範囲の外で押すとこぼす。BONUS の役はこぼしても次の回に持ち越す。予告ランプが光ったら BONUS の役かもしれない(たまにガセ)。<br>
         <b>必殺技</b>(メニューから。Coin を大量に使う): SNIPE SHOT(NORMAL ${fmt(c.skill.normal.snipe)} / CLASSIC ${fmt(c.skill.classic.snipe)} coin)は数字を 2 つタップし、Pair なら位置に関係なく消す(得点と Chain は通常の消去と同じ)。LINE BREAK(${fmt(c.skill.normal.line)} / ${fmt(c.skill.classic.line)} coin)は 1 行を丸ごと消し、Line の得点 × Chain 倍率が入る。残った数字の組み合わせによっては Add が必要になる。Coin を使った Stage(ショップも必殺技も)は Stage ごとの最高得点に数えない。<br>
@@ -861,7 +886,7 @@ async function boot() {
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
-        <div class="ja">${vs.active ? `VS · 合言葉 ${vs.code}` : `MODE: ${game.classic ? 'CLASSIC' : 'NORMAL'}(Title で切り替え) · Coin ${fmt(game.coins)}`}</div>
+        <div class="ja">${vs.active ? `VS · 合言葉 ${vs.code}` : `MODE: ${game.mode.toUpperCase()}${game.gambit ? ` · GAMBIT ${game.gambit.name}` : ''}(Title で切り替え) · Coin ${fmt(game.coins)}`}</div>
         ${inPlay && !vs.active ? game.skillItems().map((e) => `<button class="btn btn-ghost" data-skill="${e.skill}" ${e.can ? '' : 'disabled'}>${e.skill === 'line' ? 'LINE BREAK' : 'SNIPE SHOT'}<small>　${fmt(e.price)} coin · ${e.skill === 'line' ? '1 行を丸ごと消す' : '位置に関係なく Pair を 1 組消す'}</small></button>`).join('') : ''}
         ${inPlay && !vs.active && game.shopPrices.heart ? `<button class="btn btn-ghost" id="ov-buy-heart" ${game.shopItems().find((e) => e.item === 'heart')?.can ? '' : 'disabled'}>BUY HEART<small>　${fmt(game.shopPrices.heart)} coin · Heart ${game.run.lives}/${CONFIG.lives.max}</small></button>` : ''}
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>

@@ -376,6 +376,12 @@ body.classic .cell.selected { box-shadow:0 0 0 1px var(--heat); }
 }
 .mode-tab.on { color:var(--text); border-bottom-color:var(--blue); }
 .mode-tab:active { transform:translateY(1px); }
+.mode-tab.locked { opacity:0.4; }
+.gambits { display:grid; gap:8px; margin-top:12px; }
+.gambits .gambit { flex-direction:column; align-items:flex-start; gap:3px; padding:12px 14px; text-align:left; }
+.gambits .gambit b { font-size:13px; letter-spacing:2px; color:var(--amber); }
+.gambits .gambit .up { color:var(--green); font-size:11px; text-transform:none; letter-spacing:0; }
+.gambits .gambit .down { color:var(--rose); font-size:11px; text-transform:none; letter-spacing:0; }
 .mode-desc { min-height:2.6em; }
 
 /* ---------- お題(Quest) ---------- */

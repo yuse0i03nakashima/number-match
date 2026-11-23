@@ -30,11 +30,12 @@ import { validPairs, removePair, collapseRows, isCleared, matches, connected, ro
 import { pathInfo, difficultyMult, speedTier } from './scoring.js';
 import { chooseAddition } from './solver.js';
 import { makeQuest, updateQuest } from './quest.js';
+import { GAMBITS, hardConfig, pickGambits } from './gambit.js';
 
 const RANKS = ['C', 'B', 'A', 'S'];
 const rankIndex = (r) => RANKS.indexOf(r);
 
-export const MODES = ['normal', 'classic'];
+export const MODES = ['normal', 'classic', 'hard'];
 const emptyProgress = () => ({ maxStage: 0, stars: {}, ranks: {}, attempts: {}, bestScore: 0, runs: 0, quests: {}, stageBest: {} });
 
 export class Game {
@@ -86,8 +87,40 @@ export class Game {
   get run() { return this.slots[this.mode].run; }
   set run(v) { this.slots[this.mode].run = v; }
   get classic() { return this.mode === 'classic'; }
+  get hard() { return this.mode === 'hard'; }
+  /** HARD は NORMAL で cfg.hard.unlockStage 個の Stage を Clear すると開放 */
+  get hardUnlocked() { return (this.slots.normal?.progress.maxStage ?? 0) >= this.baseCfg.hard.unlockStage; }
+  /** 設定。HARD のときだけ hard.rules と選んだ GAMBIT で組み替えたものを返す(組み替えは札が変わったときだけ) */
+  get cfg() {
+    if (this.mode !== 'hard' || !this.baseCfg.hard) return this.baseCfg;
+    const key = this.run?.gambit ?? '';
+    if (!this._hardCfg || this._hardKey !== key) { this._hardCfg = hardConfig(this.baseCfg, key || null); this._hardKey = key; }
+    return this._hardCfg;
+  }
+  set cfg(v) { this.baseCfg = v; this._hardCfg = null; }
+  /** 選んでいる GAMBIT(HARD 以外と未選択は null) */
+  get gambit() { const id = this.run?.gambit; return id ? (GAMBITS.find((g) => g.id === id) ?? null) : null; }
+  /** まだ選んでいない GAMBIT の候補(World の始め)。無ければ null */
+  get pendingGambit() {
+    if (!this.hard || !this.run || this.run.gambit || !(this.run.gambitOffer?.length)) return null;
+    return this.run.gambitOffer.map((id) => GAMBITS.find((g) => g.id === id)).filter(Boolean);
+  }
+  /** GAMBIT を 1 枚選ぶ。今の Stage の Add・Hint(まだ使っていなければ)と Heart の上限にすぐ効く */
+  chooseGambit(id, now = Date.now()) {
+    if (!this.hard || !this.run || this.run.gambit || !(this.run.gambitOffer ?? []).includes(id)) return [];
+    this.run.gambit = id;
+    const cfg = this.cfg, st = this.stage;
+    if (st && st.status === 'play') {
+      if (st.addsUsed === 0 && !(st.addsBought)) { st.addsLeft = cfg.hard.addsPerStage; st.addsTotal = cfg.hard.addsPerStage; }
+      if (st.hintsUsed === 0 && !(st.hintsBought)) st.hintsLeft = cfg.hint.perStage;
+      if (st.chain > 0) { st.lastRemoveAt = now; st.decayed = 0; }
+    }
+    this.run.lives = Math.min(this.run.lives, cfg.lives.max);
+    this.save();
+    return [{ type: 'gambitChosen', gambit: this.gambit }];
+  }
   /** モードを切り替える(Title から)。各モードの記録と Run はそのまま残る。 */
-  setMode(mode) { if (MODES.includes(mode)) { this.mode = mode; this.save(); } }
+  setMode(mode) { if (mode === 'hard' && !this.hardUnlocked) return; if (MODES.includes(mode)) { this.mode = mode; this.save(); } }
   /** Coin を足す(負の値で引く)。残高は 0 未満にならない。 */
   addCoins(n) { this.coins = Math.max(0, Math.floor(this.coins + n)); this.save(); return this.coins; }
 
@@ -274,9 +307,14 @@ export class Game {
       // CLASSIC の投資は「次の World の各 Stage の Add +N」。World の最初に受け取り、World の間ずっと効く
       this.run.bonusAdds = this.classic ? (this.run.investAdds ?? 0) : 0;
       this.run.investChain = 0; this.run.investAdds = 0; this.run.savedAdds = 0;
+      // HARD: 前の World の GAMBIT は外れ、新しい候補を出す(種は Run の回数と Stage から。同じ Run の同じ World なら同じ 3 枚)
+      if (this.hard) {
+        this.run.gambit = null;
+        this.run.gambitOffer = pickGambits((this.progress.runs ?? 0) * 131 + this.run.stageIndex * 7 + 1, this.cfg.hard.gambitOffer);
+      }
     }
     const fever = carry && carry.fever ? { until: carry.fever.until, startedAt: carry.fever.startedAt ?? now } : null;
-    const addsTotal = this.classic ? this.cfg.classic.addsPerStage + (this.run.bonusAdds ?? 0) : def.adds;
+    const addsTotal = this.classic ? this.cfg.classic.addsPerStage + (this.run.bonusAdds ?? 0) : this.hard ? this.cfg.hard.addsPerStage : def.adds;
     this.run.stage = {
       board: variant.cells.slice(),
       addsLeft: addsTotal,
@@ -300,7 +338,10 @@ export class Game {
       firstDigitCleared: null,
     };
     this.save();
-    return [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex, carried: !!carry, quest: this.run.stage.quest, invest, bonusAdds: worldStart ? (this.run.bonusAdds ?? 0) : 0, classic: this.classic }];
+    const events = [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex, carried: !!carry, quest: this.run.stage.quest, invest, bonusAdds: worldStart ? (this.run.bonusAdds ?? 0) : 0, classic: this.classic, hard: this.hard }];
+    const offer = this.pendingGambit;
+    if (offer) events.push({ type: 'gambit', options: offer });
+    return events;
   }
 
   /** 中断から戻ったとき。離れていた時間で Chain が減ったり速さ Bonus が付いたりしないようにする。 */
@@ -666,8 +707,8 @@ export class Game {
     const stageBestUpdated = !st.coinUsed && st.stageScore > prevBest;   // Coin(ショップ・必殺技)を使った Stage は腕前の記録に数えない
     if (!this.progress.stageBest) this.progress.stageBest = {};
     if (stageBestUpdated) this.progress.stageBest[def.stage] = st.stageScore;
-    // Coin: Stage の得点がそのまま貯まる
-    const coinsGained = st.stageScore;
+    // Coin: Stage の得点がそのまま貯まる(HARD は × coinMult)
+    const coinsGained = Math.floor(st.stageScore * (this.hard ? cfg.hard.coinMult : 1));
     this.coins += coinsGained;
     this.save();
     return [{
@@ -680,6 +721,7 @@ export class Game {
       chain: st.chain, mult: this.multiplier, fever: !!st.fever,
       maxMult: this.multiplierFor(st.maxChain ?? 0), runMaxMult: this.multiplierFor(this.run.maxChain ?? 0),
       quest: st.quest, questBonus, savedAdds: this.run.savedAdds, investChain, investHearts, investAdds, classic: this.classic,
+      hard: this.hard, gambit: this.gambit,
     }];
   }
 

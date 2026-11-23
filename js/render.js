@@ -136,7 +136,7 @@ export class Renderer {
     const run = game.run, st = game.stage, def = game.stageDef;
     if (!run || !st || !def) return;
     this.$('hud-stage-label').textContent = `STAGE ${String(def.stage).padStart(2, '0')}`;
-    this.$('hud-world-label').textContent = game.cfg.vsMode ? `vs · ${def.cellsCount} cells` : `world ${game.worldOf(run.stageIndex) + 1}${def.extra ? ' · extra' : ''} · ${def.cellsCount} cells${game.classic ? ' · classic' : ''}`;
+    this.$('hud-world-label').textContent = game.cfg.vsMode ? `vs · ${def.cellsCount} cells` : `world ${game.worldOf(run.stageIndex) + 1}${def.extra ? ' · extra' : ''} · ${def.cellsCount} cells${game.classic ? ' · classic' : game.hard ? ` · hard${game.gambit ? ' · ' + game.gambit.name : ''}` : ''}`;
     this.$('hud-score').textContent = run.score.toLocaleString('en-US');
     // CLASSIC に Chain・Heart は無い
     this.$('hud-chain').hidden = game.classic;
