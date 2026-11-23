@@ -321,6 +321,7 @@ body.fever:not(.classic) .fever-label { animation:fever-label 0.4s steps(2) infi
 .btn:disabled { opacity:0.4; cursor:not-allowed; }
 .worlds { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:8px; }
 .worlds .btn { padding:10px 6px; font-size:10px; flex-direction:column; gap:2px; }
+.worlds .btn.extra { border-color:var(--amber); }
 .worlds .btn small { font-size:9px; letter-spacing:1px; color:var(--text-dim); text-transform:none; }
 .ranks { display:flex; gap:10px; justify-content:center; font-family:var(--font-mono); font-size:11px; letter-spacing:1px; }
 .ranks .S { color:var(--amber); } .ranks .A { color:var(--rose); } .ranks .B { color:var(--blue); } .ranks .C { color:var(--text-muted); }

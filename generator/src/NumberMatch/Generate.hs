@@ -38,14 +38,18 @@ data StageSpec = StageSpec
   { specStage :: Int   -- ^ ステージ番号(1 始まり)
   , specCells :: Int   -- ^ 初期のマス数(偶数)
   , specAdds  :: Int   -- ^ 「数字を追加」の回数
+  , specExtra :: Bool  -- ^ EXTRA(全 World 制覇後の高難易度 Stage 31〜60)か
   } deriving (Show)
 
 -- | ステージ番号 → 設定。ステージが進むごとにマス数を 2 ずつ増やす(偶数を保つ)。
 --   ステージ 1 は 26 個(2 行 + 8 個。本家の 27 個に近い)、ステージ 30 は 84 個(9 行 + 3 個)。
 --   「数字を追加」の回数は、ステージ 10 までは 3 回、それ以降は 2 回。
+--   ステージ 31 からは EXTRA: マス数は 90 個(10 行)で止め、追加は 1 回だけ。
+--   難しさはマス数ではなく、初手の選択肢の少なさと、全消しの筋道の見つけにくさで付ける(Main.hs の findStage)。
 stageSpec :: Int -> StageSpec
-stageSpec n = StageSpec n cells adds
+stageSpec n = StageSpec n cells adds (n > 30)
   where
-    cells = 24 + 2 * n
+    cells = min 90 (24 + 2 * n)
     adds | n <= 10   = 3
-         | otherwise = 2
+         | n <= 30   = 2
+         | otherwise = 1

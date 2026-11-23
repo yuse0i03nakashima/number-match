@@ -20,12 +20,14 @@ function memoryStorage() {
 const fresh = () => new Game(stages, CONFIG, memoryStorage());
 const C = CONFIG;
 
-test('stages.json: 30 Stage、各 3 Board、マス数は偶数で 2 ずつ増える、par 0', () => {
-  assert.equal(stages.length, 30);
+test('stages.json: 60 Stage(30 + EXTRA 30)、各 3 Board、マス数は偶数で 2 ずつ増え 90 で止まる、par 0。EXTRA は Add 1 回', () => {
+  assert.equal(stages.length, 60);
   for (const [k, s] of stages.entries()) {
     assert.equal(s.boards.length, 3, `stage ${s.stage}`);
     assert.equal(s.par, 0);
-    assert.equal(s.cellsCount, 26 + 2 * k);
+    assert.equal(s.cellsCount, Math.min(90, 26 + 2 * k));
+    assert.equal(s.extra, k >= 30);
+    if (s.extra) assert.equal(s.adds, 1);
     for (const b of s.boards) assert.equal(b.cells.length, s.cellsCount);
   }
 });

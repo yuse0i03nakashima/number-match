@@ -12,9 +12,10 @@ import NumberMatch.Generate
 import NumberMatch.Json
 
 -- | 作るステージ数と、1 回の探索に許すノード数。
-stageCount, budget :: Int
-stageCount = 30
+stageCount, budget, extraBudget :: Int
+stageCount = 60
 budget     = 4000   -- 小さめ: 探索がすぐ見つけるボード = 人にも筋道が見つけやすいボード
+extraBudget = 40000 -- EXTRA(Stage 31〜): budget では見つからず extraBudget で見つかるボード = 筋道が見つけにくいボード
 
 -- | ステージ 1 面ぶんの結果。
 data Stage = Stage
@@ -30,16 +31,24 @@ data Stage = Stage
 --   parityOk で先に弾くと、探索しなくてよいシードが大半になる。
 findStage :: StageSpec -> Seed -> Stage
 findStage spec seed
-  | parityOk b, enoughMoves, Just sol <- solve budget 0 b =
+  | parityOk b, enoughMoves, Just sol <- solution =
       Stage spec seed b 0 moves sol
   | otherwise = findStage spec (nextSeed seed)
   where
     b     = randomBoard seed (specCells spec)
     moves = length (validPairs b)
     -- 序ボードは初手の選択肢を多めに(やさしく)、後半は絞る。
+    -- EXTRA は初手の選択肢が少ないボード(90 マスの乱数ボードは 50〜87 組、中央は 65 前後。下位の 3 分の 1 ほどを採る)。
     enoughMoves
+      | specExtra spec      = moves <= 56
       | specStage spec <= 5 = moves >= 6
       | otherwise           = moves >= 3
+    -- EXTRA は、小さい予算では見つからないが大きい予算なら見つかるボードだけを採る(浅い読みでは詰む面)。
+    solution
+      | specExtra spec = case solve budget 0 b of
+          Just _  -> Nothing
+          Nothing -> solve extraBudget 0 b
+      | otherwise = solve budget 0 b
 
 -- | 1 ステージ = 同じ設定のボードを variantCount 枚。失敗して再挑戦するとき別のボードを出す。
 variantCount :: Int
@@ -53,6 +62,7 @@ stageJson sts@(st : _) = jObj
   [ ("stage", jInt (specStage (stSpec st)))
   , ("cellsCount", jInt (specCells (stSpec st)))
   , ("adds",  jInt (specAdds (stSpec st)))
+  , ("extra", jBool (specExtra (stSpec st)))
   , ("par",   jInt (stPar st))
   , ("boards", jList (map boardJson sts))
   ]
