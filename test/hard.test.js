@@ -62,6 +62,7 @@ test('GAMBIT: BLAZE は FEVER 2 倍・Hint 0。選ぶと今の Stage に効き�
   assert.equal(ev.gambit.id, 'blaze');
   assert.equal(g.gambit.name, 'BLAZE');
   assert.equal(g.stage.hintsLeft, 0);
+  assert.notEqual(g.stage.quest?.type, 'noHint');   // Hint 0 なので「Hint を使わずに」のお題は出し直す
   assert.equal(g.cfg.fever.durationMs, CONFIG.fever.durationMs * 2);
   assert.equal(g.cfg.hard.pointMult, CONFIG.hard.pointMult);
   assert.equal(g.chooseGambit('glass').length, 0);
