@@ -125,12 +125,30 @@ export const CONFIG = {
   shop: {
     normal:  { hint: 5000,  add: 10000, heart: 20000 },
     classic: { hint: 1500,  add: 3000 },                   // CLASSIC に Heart は無い
+    hard:    { hint: 5000,  add: 10000, heart: 20000 },
   },
   // 必殺技(Stage 中に大量の Coin で使う)。snipe: 位置に関係なく Pair を 1 組消す。line: 1 行を丸ごと消す
   // 使った Stage は Stage ごとの最高得点に数えない(ショップで買った Stage も同じ)
   skill: {
     normal:  { snipe: 5000, line: 20000 },
     classic: { snipe: 1500, line: 6000 },
+    hard:    { snipe: 5000, line: 20000 },
+  },
+  // HARD モード(NORMAL で World 6 を制覇すると開放。NORMAL の高難易度周回で、記録は別枠)。
+  // 代償: Add 1 回・Heart 2・Hint 2・Chain の減りが速い。見返り: 得点 ×2(Rank の基準も ×2)・Coin ×3。
+  // World の始めに GAMBIT(gambit.js)を gambitOffer 枚から 1 枚選ぶ。札は rules と同じ形で cfg を書き換える
+  hard: {
+    unlockStage: 30,         // NORMAL でこの数の Stage を Clear すると開放(= World 6 の終わり)
+    addsPerStage: 1,
+    pointMult: 2,            // score の各項目と Quest の Bonus に掛かる(hardConfig が組み立てる)
+    coinMult: 3,             // Clear で貯まる Coin = Stage 得点 × これ
+    gambitOffer: 3,
+    rules: {
+      lives: { start: 2, max: 2 },
+      hint: { perStage: 2 },
+      chain: { decayGraceMs: 4000, decayStepMs: 1500 },
+      rank: { perCell: 200 },
+    },
   },
   // スロット(SLOT タブ。Coin を賭けて Coin を得る別ゲーム)。確率は 1 回転ごと。払い戻し率の目安は 90%(simulate で測る)
   slot: {
