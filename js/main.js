@@ -694,13 +694,15 @@ async function boot() {
     const daily = game.dailyStatus(Date.now());
     const worlds = [];
     const total = Math.ceil(stages.length / CONFIG.worldSize);
+    const extraFrom = game.worldOf(Math.max(0, stages.findIndex((s) => s.extra)));   // EXTRA が始まる World の番号(0 始まり)
     for (let w = 0; w < total; w++) {
       const unlocked = w < game.unlockedWorlds;
       const first = w * CONFIG.worldSize;
       const inWorld = stages.slice(first, first + CONFIG.worldSize);
       const starsIn = inWorld.reduce((a, s) => a + (game.progress.stars[s.stage] ?? 0), 0);
       const ranksIn = inWorld.map((s) => game.progress.ranks[s.stage] ?? '·').join(' ');
-      worlds.push(`<button class="btn btn-ghost" data-world="${w}" ${unlocked ? '' : 'disabled'}>WORLD ${w + 1}<small>${unlocked ? `★ ${starsIn}/${CONFIG.worldSize * 3}` : 'locked'}</small>${unlocked ? `<small>${ranksIn}</small>` : ''}</button>`);
+      const extra = inWorld[0]?.extra;       // Stage 31〜(EXTRA): 全 World 制覇後の高難易度。Add 1 回・初手の Pair が少ない Board
+      worlds.push(`<button class="btn btn-ghost ${extra ? 'extra' : ''}" data-world="${w}" ${unlocked ? '' : 'disabled'}>${extra ? `EXTRA ${w + 1 - extraFrom}` : `WORLD ${w + 1}`}<small>${unlocked ? `★ ${starsIn}/${CONFIG.worldSize * 3}` : 'locked'}</small>${unlocked ? `<small>${ranksIn}</small>` : ''}</button>`);
     }
     const card = ui.showOverlay(`
       <div class="eyebrow">number match</div>
@@ -978,7 +980,7 @@ async function boot() {
     if (!vs.active || vs.playing) return;
     const connected = !!(vs.link && vs.link.open);
     const totalWorlds = Math.ceil(stages.length / CONFIG.worldSize);
-    const worldChips = Array.from({ length: totalWorlds }, (_, w) => `<button class="btn btn-ghost chip ${vs.world === w ? 'on' : ''}" data-world="${w}">W${w + 1}<small>${stages[w * CONFIG.worldSize].cellsCount}〜 cells</small></button>`).join('');
+    const worldChips = Array.from({ length: totalWorlds }, (_, w) => `<button class="btn btn-ghost chip ${vs.world === w ? 'on' : ''}" data-world="${w}">${stages[w * CONFIG.worldSize].extra ? 'EX' : 'W'}${w + 1}<small>${stages[w * CONFIG.worldSize].cellsCount}〜 cells</small></button>`).join('');
     const timeChips = CONFIG.vs.timeLimits.map((ms) => `<button class="btn btn-ghost chip ${vs.timeLimitMs === ms ? 'on' : ''}" data-time="${ms}">${mmss(ms)}</button>`).join('');
     const card = ui.showOverlay(`
       <div class="eyebrow">vs · room</div>
