@@ -18,6 +18,11 @@ export class Sound {
     this.ctx = null;
     this.master = null;
     this.enabled = this.loadEnabled();
+    this.pack = 'synth';   // 'synth' | 'bell' | 'chiptune' | 'marimba'
+  }
+
+  setPack(pack) {
+    if (['synth', 'bell', 'chiptune', 'marimba'].includes(pack)) this.pack = pack;
   }
 
   loadEnabled() {
@@ -83,13 +88,39 @@ export class Sound {
   select() { this.tone(880, { type: 'sine', dur: 0.08, gain: 0.18 }); }
   deselect() { this.tone(660, { type: 'sine', dur: 0.06, gain: 0.12 }); }
 
-  // 消した: チェーン数で音階を上る。2 音重ねて厚みを出す。
+  // 消した: チェーン数で音階を上る。音色パックで波形と余韻が変わる。
   remove(chain, heat = 0) {
-    const idx = Math.min(chain - 1, 14);               // ド(1 連鎖)から 2 オクターブ上のド(15 連鎖)まで
+    const idx = Math.min(Math.max(0, chain - 1), 14);
     const f = noteFreq(idx);
+    if (this.pack === 'bell') {
+      this.tone(f * 2, { type: 'sine', dur: 0.55, gain: 0.38, attack: 0.002, lowpass: 8000 });
+      this.tone(f * 4.01, { type: 'sine', dur: 0.32, gain: 0.14, attack: 0.002, lowpass: 9000 });
+      this.tone(f, { type: 'triangle', dur: 0.4, gain: 0.16, attack: 0.004 });
+      return;
+    }
+    if (this.pack === 'chiptune') {
+      this.tone(f, { type: 'square', dur: 0.16, gain: 0.24, attack: 0.002, lowpass: 2800 + heat * 2000 });
+      this.tone(f * 2, { type: 'square', dur: 0.1, gain: 0.1, when: 0.03, attack: 0.002, lowpass: 3200 });
+      return;
+    }
+    if (this.pack === 'marimba') {
+      this.tone(f, { type: 'sine', dur: 0.24, gain: 0.55, attack: 0.002, lowpass: 2400 });
+      this.tone(f * 4, { type: 'sine', dur: 0.06, gain: 0.14, attack: 0.001, lowpass: 4000 });
+      this.noise({ dur: 0.025, gain: 0.07, from: 900, to: 400 });
+      return;
+    }
     this.tone(f, { type: 'triangle', dur: 0.32, gain: 0.5, lowpass: 3000 + heat * 3000 });
     this.tone(f * 2, { type: 'sine', dur: 0.18, gain: 0.12 });
     this.noise({ dur: 0.05, gain: 0.05, from: 1500, to: 600 });
+  }
+
+  // 特殊タイル: GOLD / 導火線ターゲット達成
+  goldHit() {
+    [7, 11, 14, 18].forEach((k, n) => this.tone(noteFreq(k), { type: 'sine', dur: 0.28, gain: 0.26, when: n * 0.04 }));
+  }
+  fuseHit() {
+    [4, 7, 11, 14].forEach((k, n) => this.tone(noteFreq(k), { type: 'triangle', dur: 0.35, gain: 0.32, when: n * 0.045 }));
+    this.noise({ dur: 0.18, gain: 0.12, from: 600, to: 3200 });
   }
 
   // 行が消えた: 和音をアルペジオで。連続(streak)で消すほど構成音が増え、音域も上がる

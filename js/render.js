@@ -1,9 +1,9 @@
 // 画面の描き直し(DOM)。Board は <button class="cell"> の格子、HUD は数字と記号。
 // 「状態 → 見た目」の一方向だけ。入力の処理は main.js。
 
-import { WIDTH } from './rules.js';
+import { WIDTH, rowOf } from './rules.js';
 import { heatColor } from './fx.js';
-import { sightLines } from './scoring.js';
+import { sightLines, boardInsights } from './scoring.js';
 
 export class Renderer {
   constructor(root) {
@@ -50,21 +50,31 @@ export class Renderer {
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
 
-  // Board 全体を作り直す。selected / hintPair / flash / scope の見た目もここで付ける。
-  renderBoard(board, { selected = null, hintPair = null, flashPairs = null, scopeTile = null, addedFrom = null } = {}) {
+  // Board 全体を作り直す。selected / hintPair / flash / scope / specials / あと 1 手行消し予告もここで付ける。
+  renderBoard(board, { selected = null, hintPair = null, flashPairs = null, scopeTile = null, addedFrom = null, specials = null } = {}) {
     const flashSet = new Set();
     if (flashPairs) for (const [a, b] of flashPairs) { flashSet.add(a); flashSet.add(b); }
     const sight = selected !== null && board[selected] ? sightLines(board, selected) : null;
     const raySet = new Set(sight?.ray), reachSet = new Set(sight?.reach);
+    const insights = boardInsights(board);
     const frag = document.createDocumentFragment();
     board.forEach((c, p) => {
       const el = document.createElement('button');
       el.type = 'button';
       el.className = 'cell' + (c === 0 ? ' empty' : '');
       el.dataset.pos = String(p);
+      if (c !== 0) el.dataset.num = String(c);
       el.textContent = c === 0 ? '' : String(c);
       el.setAttribute('role', 'gridcell');
       if (c === 0) el.tabIndex = -1;
+      if (c !== 0 && insights.almostRows.has(rowOf(p))) el.classList.add('row-almost');
+      const sp = c !== 0 && specials ? specials[p] : null;
+      if (sp?.type === 'gold') el.classList.add('sp-gold');
+      if (sp?.type === 'fuse') {
+        el.classList.add('sp-fuse');
+        el.dataset.fuse = String(sp.left);
+        if (sp.left <= 2) el.classList.add('urgent');
+      }
       if (selected === p) el.classList.add('selected');
       if (raySet.has(p)) el.classList.add('ray');
       if (reachSet.has(p)) el.classList.add('reach');
@@ -78,7 +88,23 @@ export class Renderer {
       frag.appendChild(el);
     });
     this.board.replaceChildren(frag);
+    this.renderDigits(insights);
     this.alignGrid();
+  }
+
+  // 1〜9 の残数バー。あと 1 手で DIGIT CLEAR できる数字を紫で強調する
+  renderDigits(insights) {
+    const box = this.$('hud-digits');
+    if (!box) return;
+    if (!insights) { box.hidden = true; return; }
+    box.hidden = false;
+    const html = [];
+    for (let d = 1; d <= 9; d++) {
+      const cnt = insights.digitCounts[d] ?? 0;
+      const cls = 'digit-chip' + (cnt === 0 ? ' zero' : insights.finishingDigits.has(d) ? ' finishing' : '');
+      html.push(`<span class="${cls}" data-num="${d}"><span class="d-num">${d}</span><span class="d-cnt">${cnt}</span></span>`);
+    }
+    box.innerHTML = html.join('');
   }
 
   cellEl(pos) { return this.board.querySelector(`.cell[data-pos="${pos}"]`); }
@@ -135,8 +161,20 @@ export class Renderer {
   renderHud(game, now = Date.now()) {
     const run = game.run, st = game.stage, def = game.stageDef;
     if (!run || !st || !def) return;
-    this.$('hud-stage-label').textContent = `STAGE ${String(def.stage).padStart(2, '0')}`;
-    this.$('hud-world-label').textContent = game.cfg.vsMode ? `vs · ${def.cellsCount} cells` : `world ${game.worldOf(run.stageIndex) + 1}${def.extra ? ' · extra' : ''} · ${def.cellsCount} cells${game.classic ? ' · classic' : game.hard ? ` · hard${game.gambit ? ' · ' + game.gambit.name : ''}` : ''}`;
+    this.$('hud-stage-label').textContent = def.daily ? `DAILY ${def.dateKey.slice(5)}` : `STAGE ${String(def.stage).padStart(2, '0')}`;
+    const gambitNames = game.gambitList?.map((g) => g.name).join('+') ?? '';
+    const modeTag = game.classic
+      ? ' · classic'
+      : game.hard
+        ? ` · hard${gambitNames ? ' · ' + gambitNames : ''}`
+        : game.rogue
+          ? ` · rogue${gambitNames ? ' · ' + gambitNames : ''}`
+          : '';
+    this.$('hud-world-label').textContent = game.cfg.vsMode
+      ? `vs · ${def.cellsCount} cells`
+      : def.daily
+        ? `daily · ${def.cellsCount} cells`
+        : `world ${game.worldOf(run.stageIndex) + 1}${def.extra ? ' · extra' : ''} · ${def.cellsCount} cells${modeTag}`;
     this.$('hud-score').textContent = run.score.toLocaleString('en-US');
     // CLASSIC に Chain・Heart は無い
     this.$('hud-chain').hidden = game.classic;

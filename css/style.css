@@ -632,3 +632,125 @@ body.skill .cell:not(.empty) { border-color:rgba(240,98,146,0.6); }
 .card .vs-scores .pts { font-family:var(--font-mono); font-size:30px; font-variant-numeric:tabular-nums; }
 .card .vs-scores .side.win .pts { color:var(--amber); text-shadow:0 0 18px rgba(245,166,35,0.6); }
 .card h1.vs-win { color:var(--amber); } .card h1.vs-lose { color:var(--text-muted); }
+
+/* ---------- 数字の残数バー(1〜9) ---------- */
+.digits-bar {
+  display:grid; grid-template-columns:repeat(9, 1fr); gap:4px;
+  margin-top:6px; padding:4px 6px;
+  background:var(--surface); border:1px solid var(--border);
+  font-family:var(--font-mono);
+}
+.digits-bar[hidden] { display:none; }
+.digit-chip {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:2px 0; border-radius:3px; border:1px solid transparent; line-height:1.1;
+  transition:opacity 0.2s, border-color 0.2s, background 0.2s;
+}
+.digit-chip .d-num { font-size:12px; font-weight:500; color:var(--text); }
+.digit-chip .d-cnt { font-size:9px; color:var(--text-dim); }
+.digit-chip.zero { opacity:0.22; }
+.digit-chip.finishing {
+  border-color:var(--purple); background:rgba(167,139,250,0.14);
+  animation:digit-fin 0.9s ease-in-out infinite alternate;
+}
+.digit-chip.finishing .d-num, .digit-chip.finishing .d-cnt { color:var(--purple); }
+@keyframes digit-fin { 0%{box-shadow:0 0 0 0 rgba(167,139,250,0.1)} 100%{box-shadow:0 0 10px 1px rgba(167,139,250,0.5)} }
+
+/* ---------- あと 1 手で行消し予告 ---------- */
+.cell.row-almost:not(.empty):not(.selected) {
+  box-shadow:inset 0 0 0 1px rgba(245,166,35,0.55);
+  border-color:rgba(245,166,35,0.65);
+}
+
+/* ---------- 特殊タイル(GOLD / 導火線) ---------- */
+.cell.sp-gold {
+  border-color:var(--amber);
+  background:linear-gradient(145deg, rgba(245,166,35,0.22), var(--surface) 65%);
+  box-shadow:inset 0 0 10px rgba(245,166,35,0.28);
+}
+.cell.sp-gold::before {
+  content:'×2'; position:absolute; top:2px; left:3px;
+  font-size:8px; letter-spacing:0; color:var(--amber); font-weight:500; line-height:1;
+}
+.cell.sp-fuse {
+  border-color:var(--rose);
+  background:linear-gradient(145deg, rgba(240,98,146,0.22), var(--surface) 65%);
+}
+.cell.sp-fuse::after {
+  content:attr(data-fuse); position:absolute; top:2px; right:3px;
+  font-size:9px; font-weight:500; color:var(--rose); line-height:1;
+}
+.cell.sp-fuse.urgent {
+  border-color:var(--red);
+  animation:fuse-urgent 0.45s ease-in-out infinite alternate;
+}
+.cell.sp-fuse.urgent::after { color:var(--red); }
+@keyframes fuse-urgent { 0%{box-shadow:0 0 0 0 rgba(239,68,68,0.2)} 100%{box-shadow:0 0 12px 2px rgba(239,68,68,0.65)} }
+
+/* ---------- ペア色分け(足して 10 の組を同じ色) ---------- */
+body.color-pairs .cell[data-num="1"], body.color-pairs .cell[data-num="9"],
+body.color-pairs .digit-chip[data-num="1"] .d-num, body.color-pairs .digit-chip[data-num="9"] .d-num { color:#7fa8ff; }
+body.color-pairs .cell[data-num="2"], body.color-pairs .cell[data-num="8"],
+body.color-pairs .digit-chip[data-num="2"] .d-num, body.color-pairs .digit-chip[data-num="8"] .d-num { color:#5fe0a6; }
+body.color-pairs .cell[data-num="3"], body.color-pairs .cell[data-num="7"],
+body.color-pairs .digit-chip[data-num="3"] .d-num, body.color-pairs .digit-chip[data-num="7"] .d-num { color:#ffc24d; }
+body.color-pairs .cell[data-num="4"], body.color-pairs .cell[data-num="6"],
+body.color-pairs .digit-chip[data-num="4"] .d-num, body.color-pairs .digit-chip[data-num="6"] .d-num { color:#c4a6ff; }
+body.color-pairs .cell[data-num="5"], body.color-pairs .digit-chip[data-num="5"] .d-num { color:#f4f6ff; }
+body.color-pairs[data-theme="ivory"] .cell[data-num="1"], body.color-pairs[data-theme="ivory"] .cell[data-num="9"] { color:#2563eb; }
+body.color-pairs[data-theme="ivory"] .cell[data-num="2"], body.color-pairs[data-theme="ivory"] .cell[data-num="8"] { color:#059669; }
+body.color-pairs[data-theme="ivory"] .cell[data-num="3"], body.color-pairs[data-theme="ivory"] .cell[data-num="7"] { color:#d97706; }
+body.color-pairs[data-theme="ivory"] .cell[data-num="4"], body.color-pairs[data-theme="ivory"] .cell[data-num="6"] { color:#7c3aed; }
+body.color-pairs[data-theme="ivory"] .cell[data-num="5"] { color:#1f2937; }
+
+/* ---------- タブ拡張(7 タブを 2 段で押しやすく) ---------- */
+.mode-tabs { flex-wrap:wrap; gap:2px; border-bottom:none; padding-bottom:2px; }
+.mode-tab { flex:1 1 22%; padding:8px 4px; font-size:10px; letter-spacing:1.5px; border:1px solid var(--border); margin-bottom:0; }
+.mode-tab.on { border-color:var(--blue); background:var(--surface2); color:var(--text); }
+
+/* ---------- カスタマイズ画面 ---------- */
+.cust-sec { margin-top:14px; }
+.cust-title { font-family:var(--font-mono); font-size:10px; letter-spacing:2.5px; text-transform:uppercase; color:var(--text-dim); margin-bottom:6px; }
+.cust-grid { display:grid; gap:6px; }
+.cust-item {
+  display:flex; justify-content:space-between; align-items:center; gap:8px; text-align:left;
+  padding:10px 12px; width:100%;
+}
+.cust-item.equipped { border-color:var(--green); color:var(--text); }
+.cust-item .cust-meta { display:flex; flex-direction:column; gap:2px; }
+.cust-item .cust-name { font-size:12px; letter-spacing:1.5px; color:var(--text); }
+.cust-item .cust-desc { font-family:var(--font-ja); font-size:11px; letter-spacing:0; text-transform:none; color:var(--text-muted); }
+.cust-item .cust-tag { font-size:10px; white-space:nowrap; color:var(--amber); }
+.cust-item.equipped .cust-tag { color:var(--green); }
+.gambit-owned { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.gambit-pill { font-family:var(--font-mono); font-size:10px; letter-spacing:1.5px; padding:3px 8px; border:1px solid var(--amber); color:var(--amber); background:rgba(245,166,35,0.08); }
+
+/* ---------- Coin アンロックテーマ ---------- */
+body[data-theme="cyber"] {
+  --bg:#060812; --surface:#0d1326; --surface2:#131d3a; --surface3:#1b2952;
+  --border:#1e305c; --border-light:#2a4580; --cell-border:#335899;
+  --blue:#00d2ff; --amber:#ffe14d; --rose:#ff3ea5; --purple:#b46cff;
+}
+body[data-theme="matcha"] {
+  --bg:#0c120e; --surface:#141e17; --surface2:#1c2a20; --surface3:#25382a;
+  --border:#26382b; --border-light:#354d3c; --cell-border:#46634e;
+  --text:#e6ede5; --text-muted:#a3b5a5; --text-dim:#788c7b;
+  --blue:#67c29c; --amber:#e5b84b; --rose:#e07a8c; --purple:#a5b4fc;
+}
+body[data-theme="sunset"] {
+  --bg:#140b0e; --surface:#201116; --surface2:#2c171e; --surface3:#3a1f28;
+  --border:#3d212b; --border-light:#522d3a; --cell-border:#6b3b4c;
+  --text:#f5e6e8; --text-muted:#c4a1a8; --text-dim:#94737a;
+  --blue:#ff8c5a; --amber:#ffca57; --rose:#ff5470; --purple:#d580ff;
+}
+body[data-theme="ivory"] {
+  color-scheme:light;
+  --bg:#f4f1ea; --surface:#fcfbf7; --surface2:#ede8dc; --surface3:#e2dac9;
+  --border:#d7cebc; --border-light:#c4b8a1; --cell-border:#b4a58a;
+  --text:#1f232c; --text-muted:#545b6b; --text-dim:#767e91;
+  --blue:#2563eb; --green:#059669; --amber:#d97706; --rose:#db2777; --red:#dc2626; --purple:#7c3aed;
+}
+body[data-theme="ivory"] .cell.selected { color:#1f232c; background:#fff; }
+body[data-theme="ivory"] .ctl-primary .ctl-label,
+body[data-theme="ivory"] .btn-primary { color:#fff; }
+body[data-theme="ivory"] .overlay { background:rgba(31,35,44,0.55); }

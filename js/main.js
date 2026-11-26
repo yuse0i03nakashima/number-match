@@ -4,6 +4,7 @@
 
 import { CONFIG } from './config.js';
 import { VsLink, makeCode, normalizeCode, pickBoard, makeSetup, stageDefFrom } from './vs.js';
+import { makeDailyStage, formatDailyShare } from './daily.js';
 import { SWEET_MELODIES } from './melodies.js';
 import { Game } from './game.js';
 import { Renderer } from './render.js';
@@ -116,14 +117,22 @@ async function boot() {
     fx.setCalm(on);
     document.body.classList.toggle('classic', on);
     document.body.classList.toggle('hard', game.hard);
+    document.body.classList.toggle('rogue', game.rogue);
+  }
+  function applyCustomize() {
+    const u = mainGame.unlocks;
+    document.body.dataset.theme = u.theme || 'midnight';
+    document.body.classList.toggle('color-pairs', !!u.colorPairs);
+    sound.setPack(u.sound || 'synth');
   }
   // 最初のタップで AudioContext ができたら BGM をつなぐ(ensure は何度呼んでもよい)
   const ensureAudio = () => { if (sound.ensure()) bgm.attach(sound.ctx); };
   // 拍に合わせて背景を脈打たせる
   (function beat() { document.documentElement.style.setProperty('--beat', bgm.level().toFixed(2)); requestAnimationFrame(beat); })();
   const app = document.getElementById('app');
-  let busy = false;   // 消去アニメ中の多重入力を防ぐ
-  let lineStreak = 0; // 連続で行を消した回数(行が消えない手・Add・Hint・Stage 開始で 0 に戻る)
+  let busy = false;       // 消去アニメ中の多重入力を防ぐ
+  let queuedTap = null;   // 消去アニメ中に届いた次の 1 タップを予約して、終了直後に実行する
+  let lineStreak = 0;     // 連続で行を消した回数(行が消えない手・Add・Hint・Stage 開始で 0 に戻る)
   const overlayOpen = () => document.getElementById('overlay').hidden === false;
 
   // ---------- 描き直し ----------
@@ -131,7 +140,7 @@ async function boot() {
     const st = game.stage;
     if (!st) return;
     const flashPairs = st.flashUntil !== null && Date.now() < st.flashUntil ? validPairs(st.board) : null;
-    ui.renderBoard(st.board, { selected: st.selected, hintPair: st.hintPair, flashPairs, scopeTile: st.scope?.tile ?? null, ...opts });
+    ui.renderBoard(st.board, { selected: st.selected, hintPair: st.hintPair, flashPairs, scopeTile: st.scope?.tile ?? null, specials: st.specials ?? null, ...opts });
     ui.renderHud(game);
     ui.renderQuest(st.quest);
   }
@@ -304,7 +313,7 @@ async function boot() {
           break;
         }
         case 'stageStart': {
-          lineStreak = 0; titleShown = false;
+          lineStreak = 0; titleShown = false; queuedTap = null;
           bgm.setSong(bgm.songFor(ev.stageIndex));
           ui.hideOverlay();
           redraw();
@@ -324,11 +333,23 @@ async function boot() {
           }
           break;
         }
-        case 'stageClear': if (vs.playing) await onVsClear(ev); else await onStageClear(ev); break;
-        case 'stageFailed': if (vs.playing) vsFinish('stuck'); else await onStageFailed(ev); break;
-        case 'runOver': if (vs.playing) vsFinish('stuck'); else await onRunOver(ev); break;
+        case 'stageClear':
+          if (vs.playing) await onVsClear(ev);
+          else if (dailyRun.active) await onDailyClear(ev);
+          else await onStageClear(ev);
+          break;
+        case 'stageFailed':
+          if (vs.playing) vsFinish('stuck');
+          else if (dailyRun.active) await onDailyFailed(ev);
+          else await onStageFailed(ev);
+          break;
+        case 'runOver':
+          if (vs.playing) vsFinish('stuck');
+          else if (dailyRun.active) await onDailyFailed(ev);
+          else await onRunOver(ev);
+          break;
         case 'complete': showComplete(ev); break;
-        case 'gambit': showGambit(ev.options); break;
+        case 'gambit': showGambit(ev.options, ev.owned); break;
         case 'gambitChosen': ui.toast(`GAMBIT「${ev.gambit.name}」: ${ev.gambit.up} / ${ev.gambit.down}`, 3000); break;
         default: break;
       }
@@ -369,6 +390,17 @@ async function boot() {
       if (!ev.classic && ev.chain >= 5 && ev.chain % 5 === 0) {
         fx.floatText(mx, my + 30, `${ev.chain} CHAIN  ×${ev.mult.toFixed(1)}`, { color: PALETTE.white, size: 16, dy: -30, life: 1.3 });
       }
+    }
+    if (ev.goldHits > 0 && ci && cj) {
+      fx.floatText(mx, my - 54, `GOLD ×${ev.goldMult}${ev.goldCoins ? `  +${ev.goldCoins} coin` : ''}`, { color: PALETTE.amber, size: 19, dy: -45, life: 1.4 });
+      fx.ring(mx, my, PALETTE.amber, 85);
+      fx.burst(mx, my, { color: PALETTE.amber, count: Math.round(24 * fxScale), power: 1.1, size: 3.5 });
+      sound.goldHit();
+    }
+    if (ev.fuseHits > 0 && ci && cj) {
+      fx.floatText(mx, my - 78, `TARGET HIT!  +${fmt(ev.fusePoints)}`, { color: PALETTE.rose, size: 20, dy: -50, life: 1.5 });
+      fx.ring(mx, my, PALETTE.rose, 100);
+      sound.fuseHit();
     }
     if (ev.digitsCleared.length > 0 && ci && cj) {
       const target = ui.scoreCenter();
@@ -453,6 +485,15 @@ async function boot() {
     redraw();
     setTimeout(() => ui.bumpScore(), 250);   // 飛んだ得点が届くころに Score が跳ねる
     busy = false;
+    flushQueuedTap();
+  }
+
+  function flushQueuedTap() {
+    if (queuedTap === null) return;
+    const pos = queuedTap;
+    queuedTap = null;
+    if (busy || overlayOpen() || slotActive || !game.stage || game.stage.status !== 'play') return;
+    if (game.stage.board[pos] > 0) handle(game.tap(pos, Date.now()));
   }
 
   // 必殺技 LINE BREAK: 行消しの演出をそのまま使う(ヒットストップ → 横一閃 → 粒子 → 得点)
@@ -514,7 +555,8 @@ async function boot() {
       }
       await sleep(900);
     }
-    const coinMultLabel = ev.hard && ev.coinMult && ev.coinMult !== 1 ? `(×${ev.coinMult})` : '';
+    const coinMultLabel = (ev.hard || ev.rogue) && ev.coinMult && ev.coinMult !== 1 ? `(×${ev.coinMult})` : '';
+    const gambitNames = (ev.gambits?.length ? ev.gambits : ev.gambit ? [ev.gambit] : []).map((g) => g.name).join(' + ');
     const card = ui.showOverlay(`
       <div class="eyebrow">${ev.isLast ? 'final stage' : `world ${game.worldOf(game.run.stageIndex) + 1} clear`} · stage ${pad2(ev.stage)}</div>
       <h1>${ev.perfect ? 'Perfect!' : 'World Clear'}</h1>
@@ -535,7 +577,7 @@ async function boot() {
         ${ev.worldEnd && !ev.isLast && !ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">開始 Chain +${ev.investChain}${ev.investHearts ? ` · Heart +${ev.investHearts}` : ''}</span></div>` : ''}
         <div class="row"><span class="k">この Stage の最高得点${ev.coinUsed ? '(Coin を使ったので更新なし)' : ''}</span><span class="v${ev.stageBestUpdated ? ' plus' : ''}">${fmt(ev.stageBest)}${ev.stageBestUpdated && ev.prevBest ? ' NEW!' : ''}</span></div>
         <div class="row"><span class="k">Coin${coinMultLabel}</span><span class="v plus">+${fmt(ev.coinsGained)} → ${fmt(ev.coins)}</span></div>
-        ${ev.gambit ? `<div class="row"><span class="k">GAMBIT</span><span class="v">${ev.gambit.name}</span></div>` : ''}
+        ${gambitNames ? `<div class="row"><span class="k">GAMBIT</span><span class="v">${gambitNames}</span></div>` : ''}
         <div class="row"><span class="k">World の Rank</span><span class="v">${rankSummaryWorld(game.worldOf(game.run.stageIndex))}</span></div>
         ${ev.classic ? '' : `<div class="row"><span class="k">最高倍率(この Stage / Run)</span><span class="v">×${ev.maxMult.toFixed(1)} / ×${ev.runMaxMult.toFixed(1)}</span></div>`}
         <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
@@ -696,13 +738,24 @@ async function boot() {
   }
 
   // ---------- Title・Menu ----------
+  const dailyRun = { active: false, dateKey: '', def: null };
+  function leaveDaily() {
+    if (!dailyRun.active) return;
+    dailyRun.active = false;
+    game = mainGame;
+    applyMode();
+    if (game.run && game.stage && game.stage.status === 'play') redraw();
+  }
+
   function showTitle() {
-    busy = false; titleShown = true;
+    busy = false; queuedTap = null; titleShown = true;
     if (slotActive) leaveSlot();
     try { localStorage.setItem('numbermatch.tab', titleTab); } catch { /* 無視 */ }
     if (vs.active) leaveVs();
+    if (dailyRun.active) leaveDaily();
     if (titleTab === 'slot') { showSlotTitle(); return; }
     if (titleTab === 'vs') { showVsTitle(); return; }
+    if (titleTab === 'daily') { showDailyTitle(); return; }
     const canResume = game.run && game.stage && (game.stage.status === 'play' || game.stage.status === 'clear' || game.stage.status === 'failed');
     const daily = game.dailyStatus(Date.now());
     const worlds = [];
@@ -717,16 +770,19 @@ async function boot() {
       const extra = inWorld[0]?.extra;       // Stage 31〜(EXTRA): 全 World 制覇後の高難易度。Add 1 回・初手の Pair が少ない Board
       worlds.push(`<button class="btn btn-ghost ${extra ? 'extra' : ''}" data-world="${w}" ${unlocked ? '' : 'disabled'}>${extra ? `EXTRA ${w + 1 - extraFrom}` : `WORLD ${w + 1}`}<small>${unlocked ? `★ ${starsIn}/${CONFIG.worldSize * 3}` : 'locked'}</small>${unlocked ? `<small>${ranksIn}</small>` : ''}</button>`);
     }
+    const modeDesc = game.classic
+      ? '本家に近い遊び方。倍率・制限時間・Heart は無く、得点は定額。Add は 5 回で、残すほど Bonus。Dead End はすぐ知らせる。'
+      : game.hard
+        ? `NORMAL の高難易度。Add ${CONFIG.hard.addsPerStage} 回・Heart ${CONFIG.hard.rules.lives.max}・Hint ${CONFIG.hard.rules.hint.perStage} 回で、Chain は速く減る。見返りは得点 ×${CONFIG.hard.pointMult}・Coin ×${CONFIG.hard.coinMult}。World の始めに GAMBIT を 1 枚選ぶ。`
+        : game.rogue
+          ? `World を越えるたびに GAMBIT が積み上がるローグライト版(最大 ${CONFIG.rogue.maxGambits} 枚)。札の掛け合わせでシナジーを組み、Coin ×${CONFIG.rogue.coinMult} を狙おう！`
+          : 'Chain 倍率と FEVER で高得点を狙う遊び方。Chain は時間で減り、Heart が尽きると Run 終了。';
     const card = ui.showOverlay(`
       <div class="eyebrow">number match</div>
       <h1 class="big">THE TEN</h1>
       <div class="ja">同じ数字か、足して 10 になる 2 つの数字の Pair をタップで選んで消していこう！Board の数字を全部消せば Stage Clear！！</div>
       ${modeTabs()}
-      <div class="ja mode-desc">${game.classic
-        ? '本家に近い遊び方。倍率・制限時間・Heart は無く、得点は定額。Add は 5 回で、残すほど Bonus。Dead End はすぐ知らせる。'
-        : game.hard
-          ? `NORMAL の高難易度。Add ${CONFIG.hard.addsPerStage} 回・Heart ${CONFIG.hard.rules.lives.max}・Hint ${CONFIG.hard.rules.hint.perStage} 回で、Chain は速く減る。見返りは得点 ×${CONFIG.hard.pointMult}・Coin ×${CONFIG.hard.coinMult}。World の始めに GAMBIT(見返りと代償が対になった札)を 1 枚選ぶ。`
-          : 'Chain 倍率と FEVER で高得点を狙う遊び方。Chain は時間で減り、Heart が尽きると Run 終了。'}</div>
+      <div class="ja mode-desc">${modeDesc}</div>
       <div class="rows">
         <div class="row"><span class="k">Coin</span><span class="v">${fmt(game.coins)}</span></div>
         <div class="row"><span class="k">Best Score</span><span class="v">${fmt(game.progress.bestScore)}</span></div>
@@ -738,10 +794,12 @@ async function boot() {
         ${canResume ? `<button class="btn btn-primary" id="ov-resume">Continue (STAGE ${pad2(game.stageDef.stage)})</button>` : ''}
         <button class="btn ${canResume ? 'btn-ghost' : 'btn-primary'}" id="ov-new">New Game</button>
         <div class="worlds">${worlds.join('')}</div>
+        <button class="btn btn-ghost" id="ov-customize">Customize(テーマ・音色・色分け)</button>
         <button class="btn btn-ghost" id="ov-records">Records(Stage ごとの最高得点)</button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
       </div>
       <div class="meta">rules verified</div>`);
+    card.querySelector('#ov-customize').onclick = () => showCustomize(showTitle);
     card.querySelector('#ov-records').onclick = showRecords;
     card.querySelector('#ov-daily')?.addEventListener('click', () => {
       ensureAudio();
@@ -760,7 +818,7 @@ async function boot() {
       if (st.status === 'failed') { handle(game.retryStage()); return; }
       game.resume(Date.now());
       ui.hideOverlay(); redraw();
-      if (game.pendingGambit) showGambit(game.pendingGambit);
+      if (game.pendingGambit) showGambit(game.pendingGambit, game.gambitList);
     });
     card.querySelector('#ov-new').onclick = () => { ensureAudio(); handle(game.newRun(0)); };
     card.querySelectorAll('[data-world]').forEach((b) => b.addEventListener('click', () => {
@@ -769,12 +827,19 @@ async function boot() {
     card.querySelector('#ov-rules').onclick = showRules;
   }
 
-  // HARD: World の始めに GAMBIT を 1 枚選ぶ(選ぶまで Board は触れない)
-  function showGambit(options) {
+  // HARD / ROGUE: World の始めに GAMBIT を 1 枚選ぶ(選ぶまで Board は触れない)
+  function showGambit(options, owned = []) {
+    const ownedHtml = owned.length
+      ? `<div class="gambit-owned">${owned.map((g) => `<span class="gambit-pill">${g.name}</span>`).join('')}</div>`
+      : '';
+    const desc = game.rogue
+      ? `持っている札に 1 枚追加する(最大 ${CONFIG.rogue.maxGambits} 枚)。掛け合わせでシナジーを狙おう。`
+      : `この World の ${CONFIG.worldSize} Stage に効く札を 1 枚選ぶ。見返りと代償が対になっている。`;
     const card = ui.showOverlay(`
-      <div class="eyebrow">hard · world ${game.worldOf(game.run.stageIndex) + 1}</div>
+      <div class="eyebrow">${game.rogue ? 'rogue' : 'hard'} · world ${game.worldOf(game.run.stageIndex) + 1}</div>
       <h1>GAMBIT</h1>
-      <div class="ja">この World の ${CONFIG.worldSize} Stage に効く札を 1 枚選ぶ。見返りと代償が対になっている。</div>
+      <div class="ja">${desc}</div>
+      ${ownedHtml}
       <div class="gambits">${options.map((g) => `<button class="btn btn-ghost gambit" data-gambit="${g.id}"><b>${g.name}</b><span class="up">＋ ${g.up}</span><span class="down">－ ${g.down}</span></button>`).join('')}</div>`);
     card.querySelectorAll('[data-gambit]').forEach((b) => b.addEventListener('click', () => {
       ensureAudio(); sound.select?.(); punch();
@@ -784,13 +849,15 @@ async function boot() {
     }));
   }
 
-  // Title のタブ(NORMAL / CLASSIC / HARD / SLOT / VS)
+  // Title のタブ(NORMAL / CLASSIC / HARD / ROGUE / DAILY / SLOT / VS)
   function modeTabs() {
     const on = (t) => (titleTab === t ? 'on' : '');
     return `<div class="mode-tabs" role="tablist">
         <button class="mode-tab ${on('normal')}" data-tab="normal" role="tab">NORMAL</button>
         <button class="mode-tab ${on('classic')}" data-tab="classic" role="tab">CLASSIC</button>
         <button class="mode-tab ${on('hard')} ${game.hardUnlocked ? '' : 'locked'}" data-tab="hard" role="tab">HARD</button>
+        <button class="mode-tab ${on('rogue')}" data-tab="rogue" role="tab">ROGUE</button>
+        <button class="mode-tab ${on('daily')}" data-tab="daily" role="tab">DAILY</button>
         <button class="mode-tab ${on('slot')}" data-tab="slot" role="tab">SLOT</button>
         <button class="mode-tab ${on('vs')}" data-tab="vs" role="tab">VS</button>
       </div>`;
@@ -801,9 +868,181 @@ async function boot() {
       if (t === titleTab) return;
       if (t === 'hard' && !game.hardUnlocked) { ui.toast(`HARD は NORMAL で World ${CONFIG.hard.unlockStage / CONFIG.worldSize} を制覇すると開放`, 2600); return; }
       titleTab = t;
-      if (t !== 'slot' && t !== 'vs') { game.setMode(t); applyMode(); }
+      if (t !== 'slot' && t !== 'vs' && t !== 'daily') { game.setMode(t); applyMode(); }
       showTitle();
     }));
+  }
+
+  // ---------- DAILY CHALLENGE(日替わり 1 面) ----------
+  function showDailyTitle() {
+    const dateKey = mainGame.dailyKey(Date.now());
+    const def = makeDailyStage(dateKey);
+    const rec = mainGame.dailyChallenge?.[dateKey] ?? null;
+    const card = ui.showOverlay(`
+      <div class="eyebrow">daily challenge · ${dateKey}</div>
+      <h1 class="big">THE TEN</h1>
+      <div class="ja">同じ数字か、足して 10 になる 2 つの数字の Pair をタップで選んで消していこう！Board の数字を全部消せば Stage Clear！！</div>
+      ${modeTabs()}
+      <div class="ja mode-desc">今日だけの共通盤面(全消し保証)。通信なしで家族と同じ 1 面のスコアを比べられる。朝 ${CONFIG.daily.resetHour} 時に切り替わる。</div>
+      <div class="rows">
+        <div class="row"><span class="k">今日の盤面</span><span class="v">${def.cellsCount} cells · Add ${def.adds}</span></div>
+        <div class="row"><span class="k">今日の Best Score</span><span class="v">${rec ? fmt(rec.bestScore) : '未挑戦'}</span></div>
+        <div class="row"><span class="k">Rank / Star</span><span class="v">${rec ? `${rec.rank} · ${'★'.repeat(rec.stars)}${'☆'.repeat(3 - rec.stars)}` : '·'}</span></div>
+        <div class="row"><span class="k">挑戦回数</span><span class="v">${rec ? `${rec.plays} 回` : '0 回'}</span></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="ov-daily-play">${rec ? 'もう一度挑戦する' : '今日の面に挑戦'}</button>
+        ${rec ? '<button class="btn btn-ghost" id="ov-daily-copy">今日の結果をコピー</button>' : ''}
+        <button class="btn btn-ghost" id="ov-rules">How to Play</button>
+      </div>`);
+    bindTabs(card);
+    card.querySelector('#ov-daily-play').onclick = () => { ensureAudio(); startDailyChallenge(dateKey, def); };
+    card.querySelector('#ov-daily-copy')?.addEventListener('click', () => {
+      copyShareText(formatDailyShare({ dateKey, score: rec.bestScore, rank: rec.rank, stars: rec.stars, moves: rec.moves, maxMult: rec.maxMult, perfect: rec.perfect }));
+    });
+    card.querySelector('#ov-rules').onclick = showRules;
+  }
+
+  function startDailyChallenge(dateKey, def) {
+    dailyRun.active = true;
+    dailyRun.dateKey = dateKey;
+    dailyRun.def = def;
+    const dg = new Game([def], { ...CONFIG, dailyChallenge: true, flow: { ...CONFIG.flow, continueAfterClear: false } }, null);
+    dg.coins = mainGame.coins;
+    game = dg;
+    applyMode();
+    handle(game.newRun(0));
+  }
+
+  async function onDailyClear(ev) {
+    busy = true; queuedTap = null;
+    const moves = game.stage.history.filter((h) => h.type === 'remove').length;
+    if (!ev._replay) {
+      await sleep(200);
+      sound.stageClear();
+      fx.fireworks(ev.perfect ? 9 : 6);
+      punch();
+      if (ev.perfect) { setTimeout(() => sound.perfect(), 300); fx.flash('rgba(62,207,142,0.2)'); }
+      vibrate([40, 60, 40, 60, 120]);
+      await sleep(900);
+      const { improved } = mainGame.recordDailyResult(dailyRun.dateKey, {
+        score: ev.stageScore, rank: ev.rank, stars: ev.stars, moves, maxMult: ev.maxMult, perfect: ev.perfect,
+      });
+      mainGame.addCoins(ev.coinsGained);
+      ev._improved = improved;
+    }
+    const shareText = formatDailyShare({
+      dateKey: dailyRun.dateKey, score: ev.stageScore, rank: ev.rank, stars: ev.stars, moves, maxMult: ev.maxMult, perfect: ev.perfect,
+    });
+    const card = ui.showOverlay(`
+      <div class="eyebrow">daily clear · ${dailyRun.dateKey}</div>
+      <h1>${ev.perfect ? 'Perfect!' : 'Daily Clear'}</h1>
+      <div class="ja">${ev._improved ? '今日のベストスコアを更新！！' : '今日の盤面をクリア。'}</div>
+      <div class="result">
+        <div class="rank ${ev.rank} show">${ev.rank}</div>
+        <div class="stars">${[0, 1, 2].map((k) => `<span class="star show${k < ev.stars ? ' on' : ''}">★</span>`).join('')}</div>
+      </div>
+      <div class="rows">
+        <div class="row"><span class="k">Score</span><span class="v">${fmt(ev.stageScore)}</span></div>
+        <div class="row"><span class="k">手数 / 最高倍率</span><span class="v">${moves} 手 / ×${ev.maxMult.toFixed(1)}</span></div>
+        <div class="row"><span class="k">獲得 Coin</span><span class="v plus">+${fmt(ev.coinsGained)} → ${fmt(mainGame.coins)}</span></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="ov-daily-copy">結果をコピー(家族にシェア)</button>
+        <button class="btn btn-ghost" id="ov-daily-again">同じ面にもう一度挑戦</button>
+        <button class="btn btn-ghost" id="ov-review">感想戦(手の評価)</button>
+        <button class="btn btn-ghost" id="ov-title">Title へ</button>
+      </div>`);
+    card.querySelector('#ov-daily-copy').onclick = () => copyShareText(shareText);
+    card.querySelector('#ov-daily-again').onclick = () => { busy = false; startDailyChallenge(dailyRun.dateKey, dailyRun.def); };
+    card.querySelector('#ov-review').onclick = () => showReview(() => onDailyClear({ ...ev, _replay: true }));
+    card.querySelector('#ov-title').onclick = () => { busy = false; titleTab = 'daily'; showTitle(); };
+  }
+
+  async function onDailyFailed(ev) {
+    busy = true; queuedTap = null;
+    if (!ev._replay) {
+      sound.fail(); vibrate([80, 50, 80]);
+      fx.flash('rgba(239,68,68,0.18)');
+      fx.shake(ui.boardWrap, 8, 400);
+      await sleep(800);
+    }
+    const card = ui.showOverlay(`
+      <div class="eyebrow">daily · ${dailyRun.dateKey}</div>
+      <h1>Failed</h1>
+      <div class="ja">今日の盤面で詰んでしまった。何度でもやり直せる。</div>
+      <div class="actions">
+        <button class="btn btn-primary" id="ov-daily-again">最初からやり直す</button>
+        <button class="btn btn-ghost" id="ov-review">感想戦(どこで詰んだか)</button>
+        <button class="btn btn-ghost" id="ov-title">Title へ</button>
+      </div>`);
+    card.querySelector('#ov-daily-again').onclick = () => { busy = false; startDailyChallenge(dailyRun.dateKey, dailyRun.def); };
+    card.querySelector('#ov-review').onclick = () => showReview(() => onDailyFailed({ ...ev, _replay: true }));
+    card.querySelector('#ov-title').onclick = () => { busy = false; titleTab = 'daily'; showTitle(); };
+  }
+
+  function copyShareText(text) {
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => ui.toast('結果をクリップボードにコピーしました', 2200)).catch(() => ui.toast(text, 4000));
+    } else {
+      ui.toast(text, 4000);
+    }
+  }
+
+  // ---------- CUSTOMIZE(Coin 恒久アンロック: テーマ・音色・ペア色分け) ----------
+  function showCustomize(back) {
+    const u = mainGame.unlocks;
+    const renderItems = (kind, cur) => CONFIG.customize[kind].map((item) => {
+      const owned = u[kind].includes(item.id);
+      const eq = cur === item.id;
+      const tag = eq ? 'EQUIPPED' : owned ? 'OWNED' : `${fmt(item.price)} coin`;
+      const dis = !owned && mainGame.coins < item.price ? 'disabled' : '';
+      return `<button class="btn btn-ghost cust-item ${eq ? 'equipped' : ''}" data-kind="${kind}" data-id="${item.id}" ${dis}>
+        <span class="cust-meta"><span class="cust-name">${item.name}</span><span class="cust-desc">${item.desc}</span></span>
+        <span class="cust-tag">${tag}</span>
+      </button>`;
+    }).join('');
+    const card = ui.showOverlay(`
+      <div class="eyebrow">customize</div>
+      <h1>Customize</h1>
+      <div class="ja">Coin ${fmt(mainGame.coins)} · 見た目と音色の変更は Stage Best に影響しない。</div>
+      <div class="cust-sec">
+        <div class="cust-title">Color Assist</div>
+        <div class="cust-grid">
+          <button class="btn btn-ghost cust-item ${u.colorPairs ? 'equipped' : ''}" id="cust-color-pairs">
+            <span class="cust-meta"><span class="cust-name">Pair Color</span><span class="cust-desc">足して 10 の組(1&9, 2&8, 3&7, 4&6)を同じ色で表示</span></span>
+            <span class="cust-tag">${u.colorPairs ? 'ON' : 'OFF'}</span>
+          </button>
+        </div>
+      </div>
+      <div class="cust-sec">
+        <div class="cust-title">Board Theme</div>
+        <div class="cust-grid">${renderItems('themes', u.theme)}</div>
+      </div>
+      <div class="cust-sec">
+        <div class="cust-title">Sound Pack</div>
+        <div class="cust-grid">${renderItems('sounds', u.sound)}</div>
+      </div>
+      <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
+    card.querySelector('#cust-color-pairs').onclick = () => {
+      ensureAudio();
+      mainGame.setColorPairs(!mainGame.unlocks.colorPairs);
+      applyCustomize();
+      sound.select();
+      showCustomize(back);
+    };
+    card.querySelectorAll('[data-kind]').forEach((b) => b.addEventListener('click', () => {
+      ensureAudio();
+      const kind = b.dataset.kind, id = b.dataset.id;
+      const r = mainGame.buyCustomize(kind, id);
+      if (!r.ok) { ui.toast(`Coin が足りない(${fmt(r.price)} 必要)`, 2200); sound.invalid(); return; }
+      applyCustomize();
+      if (r.bought) { sound.lifeGain(); fx.fireworks(2); ui.toast(`${r.item.name} を開放しました！`, 2200); }
+      else if (kind === 'sounds') sound.remove(4, 0.5);
+      else sound.select();
+      showCustomize(back);
+    }));
+    card.querySelector('#ov-back').onclick = back;
   }
   function showSlotTitle() {
     const s = slot.stats;
@@ -880,6 +1119,11 @@ async function boot() {
         <p><b>Coin とショップ</b>: Stage Clear で得点がそのまま Coin として貯まる(Best Score とは別の累計)。Hint が尽きると BUY HINT(NORMAL・HARD ${fmt(c.shop.normal.hint)} / CLASSIC ${fmt(c.shop.classic.hint)} coin)、Add が尽きると BUY ADD(${fmt(c.shop.normal.add)} / ${fmt(c.shop.classic.add)} coin)に変わる。Heart はメニューから ${fmt(c.shop.normal.heart)} coin(NORMAL・HARD)。買った Add・Hint は温存 Bonus と投資に数えず、買った Add を使えば Perfect は失う。</p>
         <p><b>必殺技</b>(メニューから): SNIPE SHOT(NORMAL・HARD ${fmt(c.skill.normal.snipe)} / CLASSIC ${fmt(c.skill.classic.snipe)} coin)は位置に関係なく Pair を 1 組消す。LINE BREAK(${fmt(c.skill.normal.line)} / ${fmt(c.skill.classic.line)} coin)は 1 行を丸ごと消し、Line の得点 × Chain 倍率が入る。ショップや必殺技で Coin を使った Stage は、Stage ごとの最高得点には数えない。</p>
         <p><b>SLOT</b>(Title のタブ): Coin を賭けるパチスロ。1〜2 枚は中段のみ、3〜4 枚で横 3 本、5 枚以上で斜めも 5 本。1 ライン・1 枚あたり、TEN TEN TEN で BIG BONUS(${c.slot.payout.big} 枚 + ${c.slot.bonus.big.games} 回の高確率)、★★★ で REG BONUS(${c.slot.payout.reg} 枚 + ${c.slot.bonus.reg.games} 回)、同じ数字 3 つで数字 × ${c.slot.payout.samePerDigit}、合計 10 で ${c.slot.payout.ten}、足して 10 の Pair + ★ で ${c.slot.payout.pairStar}。払い戻しは揃ったうち一番高い 1 本のみ。役は START の時点で決まっていて、止めた位置から ${c.slot.pullIn.default} コマ先まで引き込む(合計 10 と Pair + ★ は広め)。BONUS の役はこぼしても持ち越す。</p>
+        <p><b>残数バーと予告</b>: 盤面の上の 1〜9 バーに各数字の残数を表示する。あと 1 手で DIGIT CLEAR できる数字は紫に光り、あと 1 手で消せる行は琥珀の枠で予告する。</p>
+        <p><b>特殊タイル</b>(NORMAL / HARD / ROGUE / DAILY): <span class="ex">×2 GOLD</span> を含む Pair を消すと得点 ×${c.special.goldMult}(2 枚同時で ×4)と +${c.special.goldCoins} coin。<span class="ex">導火線(残り手数つき)</span> をカウント 0 になる前に消すと +${c.special.fuseBonus} × Chain 倍率、FEVER 中は残り時間も延びる。</p>
+        <p><b>ROGUE モード</b>: World を越えるたびに GAMBIT が積み上がるローグライト版(最大 ${c.rogue.maxGambits} 枚)。札のシナジーを組んで高得点と Coin ×${c.rogue.coinMult} を狙える。</p>
+        <p><b>DAILY CHALLENGE</b>(Title のタブ): 今日の日付から生成する共通盤面(全消し保証)。通信なしで家族とスコアを比べ、結果をコピーして共有できる。</p>
+        <p><b>Customize</b>: Coin を使って盤面テーマや効果音パックを開放し、ペア色分け(足して 10 の組を同色表示)を切り替えられる。Stage Best には影響しない。</p>
         <p><b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。</p>
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
@@ -888,6 +1132,9 @@ async function boot() {
 
   function showMenu() {
     const inPlay = game.stage?.status === 'play';
+    const gambitDesc = game.gambitList?.length
+      ? game.gambitList.map((g) => `${g.name}(${g.up} / ${g.down})`).join(' · ')
+      : '';
     const card = ui.showOverlay(`
       <div class="eyebrow">menu</div>
       <h1>Pause</h1>
@@ -895,9 +1142,10 @@ async function boot() {
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
-        <div class="ja">${vs.active ? `VS · 合言葉 ${vs.code}` : `MODE: ${game.mode.toUpperCase()}${game.gambit ? ` · GAMBIT ${game.gambit.name}` : ''}(Title で切り替え) · Coin ${fmt(game.coins)}`}</div>
-        ${inPlay && !vs.active ? game.skillItems().map((e) => `<button class="btn btn-ghost" data-skill="${e.skill}" ${e.can ? '' : 'disabled'}>${e.skill === 'line' ? 'LINE BREAK' : 'SNIPE SHOT'}<small>　${fmt(e.price)} coin · ${e.skill === 'line' ? '1 行を丸ごと消す' : '位置に関係なく Pair を 1 組消す'}</small></button>`).join('') : ''}
-        ${inPlay && !vs.active && game.shopPrices.heart ? `<button class="btn btn-ghost" id="ov-buy-heart" ${game.shopItems().find((e) => e.item === 'heart')?.can ? '' : 'disabled'}>BUY HEART<small>　${fmt(game.shopPrices.heart)} coin · Heart ${game.run.lives}/${game.cfg.lives.max}</small></button>` : ''}
+        <button class="btn btn-ghost" id="ov-customize">Customize(テーマ・音色・色分け)</button>
+        <div class="ja">${vs.active ? `VS · 合言葉 ${vs.code}` : dailyRun.active ? `DAILY ${dailyRun.dateKey} · Coin ${fmt(mainGame.coins)}` : `MODE: ${game.mode.toUpperCase()}${gambitDesc ? ` · ${gambitDesc}` : ''} · Coin ${fmt(game.coins)}`}</div>
+        ${inPlay && !vs.active && !dailyRun.active ? game.skillItems().map((e) => `<button class="btn btn-ghost" data-skill="${e.skill}" ${e.can ? '' : 'disabled'}>${e.skill === 'line' ? 'LINE BREAK' : 'SNIPE SHOT'}<small>　${fmt(e.price)} coin · ${e.skill === 'line' ? '1 行を丸ごと消す' : '位置に関係なく Pair を 1 組消す'}</small></button>`).join('') : ''}
+        ${inPlay && !vs.active && !dailyRun.active && game.shopPrices.heart ? `<button class="btn btn-ghost" id="ov-buy-heart" ${game.shopItems().find((e) => e.item === 'heart')?.can ? '' : 'disabled'}>BUY HEART<small>　${fmt(game.shopPrices.heart)} coin · Heart ${game.run.lives}/${game.cfg.lives.max}</small></button>` : ''}
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
         ${inPlay ? (vs.active ? '<button class="btn btn-danger" id="ov-giveup">FINISH(得点を確定して終了)</button>' : `<button class="btn btn-danger" id="ov-giveup">GIVE UP(${game.classic ? '得点は半分残る' : 'Heart −1 · 得点は半分残る'})</button>`) : ''}
@@ -906,6 +1154,7 @@ async function boot() {
     card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showMenu(); };
     if (game.stage?.skill) handle(game.cancelSkill());
     card.querySelector('#ov-bgm').onclick = () => { bgm.cycle(); showMenu(); };
+    card.querySelector('#ov-customize').onclick = () => showCustomize(showMenu);
     card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showMenu; };
     card.querySelector('#ov-title').onclick = showTitle;
     card.querySelector('#ov-buy-heart')?.addEventListener('click', () => { ui.hideOverlay(); handle(game.buy('heart')); });
@@ -1210,32 +1459,39 @@ async function boot() {
   // ---------- 入力 ----------
   ui.board.addEventListener('pointerdown', (e) => {
     const el = e.target.closest('.cell');
-    if (!el || busy || overlayOpen() || slotActive) return;
+    if (!el || overlayOpen() || slotActive) return;
     ensureAudio();
-    handle(game.tap(Number(el.dataset.pos), Date.now()));
+    const pos = Number(el.dataset.pos);
+    if (busy) {
+      // 消去アニメ中のタップを 1 件だけ先行予約(FAST 連打の手触りを軽くする)
+      if (!el.classList.contains('empty') && !el.classList.contains('removing')) queuedTap = pos;
+      return;
+    }
+    handle(game.tap(pos, Date.now()));
   });
   document.getElementById('btn-add').onclick = () => {
     if (busy || overlayOpen()) return;
     ensureAudio();
     const shop = game.shopItems().find((e) => e.item === 'add');
     if (vs.active && game.stage?.addsLeft <= 0) { vsFinish('giveUp'); return; }
-    if (game.stage?.addsLeft <= 0 && shop && shop.can) handle(game.buy('add'));
+    if (!dailyRun.active && game.stage?.addsLeft <= 0 && shop && shop.can) handle(game.buy('add'));
     else handle(game.useAdd(Date.now()));
   };
   document.getElementById('btn-hint').onclick = () => {
     if (busy || overlayOpen()) return;
     ensureAudio();
     const shop = game.shopItems().find((e) => e.item === 'hint');
-    if (game.stage?.hintsLeft <= 0 && shop && shop.can) handle(game.buy('hint'));
+    if (!dailyRun.active && game.stage?.hintsLeft <= 0 && shop && shop.can) handle(game.buy('hint'));
     else handle(game.useHint());
   };
   document.getElementById('btn-menu').onclick = showMenu;
   soundLabel();
 
   // 手元で動かすときだけ、検査用に中身を見えるようにする
-  if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') globalThis.__ten = { get game() { return game; }, bgm, sound, vs };
+  if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') globalThis.__ten = { get game() { return game; }, bgm, sound, vs, dailyRun };
 
   // ---------- 起動 ----------
+  applyCustomize();
   applyMode();
   if (game.run && game.stage && game.stage.status === 'play') redraw();
   showTitle();

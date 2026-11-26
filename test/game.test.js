@@ -113,7 +113,7 @@ test('HINT(低倍率): 使用回数 1、示された Pair は得点半分で Cha
   const ev = g.tap(i, 2000).concat(g.tap(j, 2000)).find((e) => e.type === 'remove');
   assert.equal(ev.hinted, true);
   assert.equal(ev.chain, 1);                                      // 増えない
-  assert.equal(ev.pairPoints, Math.round(C.score.pairBase * ev.diffMult * g.multiplierFor(1) * ev.speedMult * C.score.hintedPairRatio));
+  assert.equal(ev.pairPoints, Math.round(C.score.pairBase * ev.diffMult * g.multiplierFor(1) * ev.speedMult * C.score.hintedPairRatio * (ev.goldMult ?? 1)));
   // 使用上限
   g.stage.hintsLeft = 0;
   assert.equal(g.useHint(3000)[0].type, 'noHints');
