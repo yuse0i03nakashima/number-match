@@ -30,13 +30,55 @@ import { validPairs, removePair, collapseRows, isCleared, matches, connected, ro
 import { pathInfo, difficultyMult, speedTier } from './scoring.js';
 import { chooseAddition } from './solver.js';
 import { makeQuest, updateQuest } from './quest.js';
-import { GAMBITS, hardConfig, pickGambits } from './gambit.js';
+import { GAMBITS, composeConfig, pickGambits } from './gambit.js';
 
 const RANKS = ['C', 'B', 'A', 'S'];
 const rankIndex = (r) => RANKS.indexOf(r);
 
-export const MODES = ['normal', 'classic', 'hard'];
+export const MODES = ['normal', 'classic', 'hard', 'rogue'];
 const emptyProgress = () => ({ maxStage: 0, stars: {}, ranks: {}, attempts: {}, bestScore: 0, runs: 0, quests: {}, stageBest: {} });
+const defaultUnlocks = () => ({ themes: ['midnight'], sounds: ['synth'], theme: 'midnight', sound: 'synth', colorPairs: false });
+
+/** 盤面に特殊タイル(GOLD / 導火線)を配置する。全消し条件を変えない位置メタデータ。 */
+export function placeSpecials(cfg, stageNum, board, { classic = false } = {}) {
+  const sp = cfg.special;
+  if (!sp || classic || cfg.vsMode || board.length < 10) return {};
+  // 盤面の下半分に配置し、上を崩して道を通し高倍率で抜く作戦を作る
+  const startPos = Math.floor(board.length / 2);
+  const candidates = [];
+  for (let p = startPos; p < board.length; p++) if (board[p] !== 0) candidates.push(p);
+  if (candidates.length === 0) return {};
+  let s = ((stageNum * 2654435761 + board.length * 1013904223) >>> 0) || 1;
+  const rnd = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  const out = {};
+  const goldN = Math.min(sp.goldCount ?? 0, candidates.length);
+  for (let k = 0; k < goldN; k++) out[candidates[k]] = { type: 'gold' };
+  const fuseN = Math.min((sp.fuseCount ?? 0) + (board.length >= 60 ? 1 : 0), Math.max(0, candidates.length - goldN));
+  for (let k = 0; k < fuseN; k++) out[candidates[goldN + k]] = { type: 'fuse', left: sp.fuseTurns ?? 6 };
+  return out;
+}
+
+/** 行の縮約にあわせて特殊タイルの位置を上に詰める。consumed に含まれる位置は除く。 */
+export function shiftSpecials(specials, clearedRows, consumed = []) {
+  if (!specials) return {};
+  const drop = new Set(consumed);
+  const clearedSet = new Set(clearedRows);
+  const out = {};
+  for (const [k, v] of Object.entries(specials)) {
+    const p = Number(k);
+    if (drop.has(p)) continue;
+    const r = rowOf(p);
+    if (clearedSet.has(r)) continue;
+    let above = 0;
+    for (const cr of clearedRows) if (cr < r) above += 1;
+    out[p - above * WIDTH] = v;
+  }
+  return out;
+}
 
 export class Game {
   constructor(stages, config, storage = globalThis.localStorage) {
@@ -46,9 +88,11 @@ export class Game {
     this.mode = 'normal';
     // モードごとの枠: 記録(progress)と進行中の Run(無ければ null)
     this.slots = Object.fromEntries(MODES.map((m) => [m, { progress: emptyProgress(), run: null }]));
-    this.coins = 0;          // Coin(モード共通。ショップとスロットで使う)
+    this.coins = 0;          // Coin(モード共通。ショップとスロットとカスタマイズで使う)
     this.slotStats = {};     // スロットの記録(slot.js が使う。ここでは保存するだけ)
     this.daily = { last: null, streak: 0 };   // デイリーボーナス: 最後に受け取った日の鍵と、連続日数
+    this.dailyChallenge = {};                 // 日替わりチャレンジの記録 { [dateKey]: { bestScore, rank, stars, moves, maxMult, perfect, plays } }
+    this.unlocks = defaultUnlocks();          // Coin で開放したテーマ・音色・ペア色分け設定
     this.load();
   }
 
@@ -68,6 +112,17 @@ export class Game {
         this.coins = Math.max(0, Math.floor(data.coins ?? 0));
         this.slotStats = data.slotStats ?? {};
         if (data.daily) this.daily = { last: data.daily.last ?? null, streak: Math.max(0, Math.floor(data.daily.streak ?? 0)) };
+        if (data.dailyChallenge && typeof data.dailyChallenge === 'object') this.dailyChallenge = data.dailyChallenge;
+        if (data.unlocks && typeof data.unlocks === 'object') {
+          const d = defaultUnlocks();
+          this.unlocks = {
+            themes: Array.isArray(data.unlocks.themes) ? [...new Set(['midnight', ...data.unlocks.themes])] : d.themes,
+            sounds: Array.isArray(data.unlocks.sounds) ? [...new Set(['synth', ...data.unlocks.sounds])] : d.sounds,
+            theme: data.unlocks.theme ?? d.theme,
+            sound: data.unlocks.sound ?? d.sound,
+            colorPairs: !!data.unlocks.colorPairs,
+          };
+        }
       } else {
         // 旧形式(モードが無いころの保存)は NORMAL の記録として読む。relax の印は捨てる
         if (data.progress) { const { relax, ...p } = data.progress; this.slots.normal.progress = { ...emptyProgress(), ...p }; }
@@ -77,7 +132,10 @@ export class Game {
   }
   save() {
     try {
-      this.storage?.setItem(this.cfg.storageKey, JSON.stringify({ mode: this.mode, slots: this.slots, coins: this.coins, slotStats: this.slotStats, daily: this.daily }));
+      this.storage?.setItem(this.cfg.storageKey, JSON.stringify({
+        mode: this.mode, slots: this.slots, coins: this.coins, slotStats: this.slotStats,
+        daily: this.daily, dailyChallenge: this.dailyChallenge, unlocks: this.unlocks,
+      }));
     } catch { /* 保存できない環境では無視 */ }
   }
 
@@ -88,43 +146,110 @@ export class Game {
   set run(v) { this.slots[this.mode].run = v; }
   get classic() { return this.mode === 'classic'; }
   get hard() { return this.mode === 'hard'; }
+  get rogue() { return this.mode === 'rogue'; }
   /** HARD は NORMAL で cfg.hard.unlockStage 個の Stage を Clear すると開放 */
   get hardUnlocked() { return (this.slots.normal?.progress.maxStage ?? 0) >= this.baseCfg.hard.unlockStage; }
-  /** 設定。HARD のときだけ hard.rules と選んだ GAMBIT で組み替えたものを返す(組み替えは札が変わったときだけ) */
+  /** 設定。HARD / ROGUE のときだけ GAMBIT を合成したものを返す(組み替えは札が変わったときだけ) */
   get cfg() {
-    if (this.mode !== 'hard' || !this.baseCfg.hard) return this.baseCfg;
-    const key = this.run?.gambit ?? '';
-    if (!this._hardCfg || this._hardKey !== key) { this._hardCfg = hardConfig(this.baseCfg, key || null); this._hardKey = key; }
-    return this._hardCfg;
+    if ((this.mode !== 'hard' && this.mode !== 'rogue') || !this.baseCfg.hard) return this.baseCfg;
+    const ids = this.mode === 'hard'
+      ? (this.run?.gambit ? [this.run.gambit] : [])
+      : (this.run?.gambits ?? []);
+    const key = `${this.mode}:${ids.join(',')}`;
+    if (!this._modCfg || this._modKey !== key) {
+      this._modCfg = composeConfig(this.baseCfg, ids, { hard: this.mode === 'hard' });
+      this._modKey = key;
+    }
+    return this._modCfg;
   }
-  set cfg(v) { this.baseCfg = v; this._hardCfg = null; }
-  /** 選んでいる GAMBIT(HARD 以外と未選択は null) */
-  get gambit() { const id = this.run?.gambit; return id ? (GAMBITS.find((g) => g.id === id) ?? null) : null; }
+  set cfg(v) { this.baseCfg = v; this._modCfg = null; }
+  /** いま有効な GAMBIT 一覧(配列)。 */
+  get gambitList() {
+    const ids = this.rogue ? (this.run?.gambits ?? []) : (this.run?.gambit ? [this.run.gambit] : []);
+    return ids.map((id) => GAMBITS.find((g) => g.id === id)).filter(Boolean);
+  }
+  /** 選んでいる GAMBIT(HARD はその 1 枚、ROGUE は最後に選んだ 1 枚、無ければ null) */
+  get gambit() {
+    const list = this.gambitList;
+    return list.length ? list[list.length - 1] : null;
+  }
   /** まだ選んでいない GAMBIT の候補(World の始め)。無ければ null */
   get pendingGambit() {
-    if (!this.hard || !this.run || this.run.gambit || !(this.run.gambitOffer?.length)) return null;
+    if ((!this.hard && !this.rogue) || !this.run || !(this.run.gambitOffer?.length)) return null;
+    if (this.hard && this.run.gambit) return null;
+    if (this.rogue && !this.run.gambitPending) return null;
     return this.run.gambitOffer.map((id) => GAMBITS.find((g) => g.id === id)).filter(Boolean);
   }
   /** GAMBIT を 1 枚選ぶ。今の Stage の Add・Hint(まだ使っていなければ)と Heart の上限にすぐ効く */
   chooseGambit(id, now = Date.now()) {
-    if (!this.hard || !this.run || this.run.gambit || !(this.run.gambitOffer ?? []).includes(id)) return [];
-    this.run.gambit = id;
+    if ((!this.hard && !this.rogue) || !this.run || !(this.run.gambitOffer ?? []).includes(id)) return [];
+    if (this.hard && this.run.gambit) return [];
+    if (this.rogue && !this.run.gambitPending) return [];
+    if (this.rogue) {
+      const cap = this.baseCfg.rogue?.maxGambits ?? 4;
+      const next = [...(this.run.gambits ?? []).filter((x) => x !== id), id];
+      this.run.gambits = next.slice(-cap);
+      this.run.gambit = id;
+      this.run.gambitPending = false;
+    } else {
+      this.run.gambit = id;
+      this.run.gambits = [id];
+      this.run.gambitPending = false;
+    }
     const cfg = this.cfg, st = this.stage;
     if (st && st.status === 'play') {
-      if (st.addsUsed === 0 && !(st.addsBought)) { st.addsLeft = cfg.hard.addsPerStage; st.addsTotal = cfg.hard.addsPerStage; }
+      if (st.addsUsed === 0 && !(st.addsBought)) {
+        const adds = this.hard ? cfg.hard.addsPerStage : Math.max(1, this.stageDef.adds + (cfg.bonusAddsDelta ?? 0));
+        st.addsLeft = adds; st.addsTotal = adds;
+      }
       if (st.hintsUsed === 0 && !(st.hintsBought)) st.hintsLeft = cfg.hint.perStage;
       if (st.chain > 0) { st.lastRemoveAt = now; st.decayed = 0; }
+      if (st.history.length === 0) st.specials = placeSpecials(cfg, this.stageDef.stage, st.board, { classic: this.classic });
       // Hint 0 の札を選んだら「Hint を使わずに Clear」のお題は意味が無いので出し直す
       if (cfg.hint.perStage === 0 && st.quest?.type === 'noHint') st.quest = makeQuest(cfg, this.stageDef.stage, st.board, { exclude: ['noHint'] });
     }
     this.run.lives = Math.min(this.run.lives, cfg.lives.max);
     this.save();
-    return [{ type: 'gambitChosen', gambit: this.gambit }];
+    return [{ type: 'gambitChosen', gambit: this.gambit, gambits: this.gambitList }];
   }
   /** モードを切り替える(Title から)。各モードの記録と Run はそのまま残る。 */
   setMode(mode) { if (mode === 'hard' && !this.hardUnlocked) return; if (MODES.includes(mode)) { this.mode = mode; this.save(); } }
   /** Coin を足す(負の値で引く)。残高は 0 未満にならない。 */
   addCoins(n) { this.coins = Math.max(0, Math.floor(this.coins + n)); this.save(); return this.coins; }
+
+  // ---------- 恒久カスタマイズ(Coin 開放) ----------
+  buyCustomize(kind, id) {
+    const list = this.baseCfg.customize?.[kind];
+    const item = list?.find((x) => x.id === id);
+    if (!item) return { ok: false, reason: 'unknown' };
+    const owned = this.unlocks[kind] ?? [];
+    const equipKey = kind === 'themes' ? 'theme' : 'sound';
+    if (owned.includes(id)) {
+      this.unlocks[equipKey] = id;
+      this.save();
+      return { ok: true, bought: false, item, coins: this.coins };
+    }
+    if (this.coins < item.price) return { ok: false, reason: 'coins', price: item.price, coins: this.coins };
+    this.coins -= item.price;
+    this.unlocks[kind] = [...owned, id];
+    this.unlocks[equipKey] = id;
+    this.save();
+    return { ok: true, bought: true, item, coins: this.coins };
+  }
+  setColorPairs(on) {
+    this.unlocks.colorPairs = !!on;
+    this.save();
+  }
+  recordDailyResult(dateKey, res) {
+    const prev = this.dailyChallenge[dateKey];
+    const plays = (prev?.plays ?? 0) + 1;
+    const improved = !prev || res.score > prev.bestScore;
+    this.dailyChallenge[dateKey] = improved
+      ? { bestScore: res.score, rank: res.rank, stars: res.stars, moves: res.moves, maxMult: res.maxMult, perfect: !!res.perfect, plays }
+      : { ...prev, plays };
+    this.save();
+    return { improved, record: this.dailyChallenge[dateKey] };
+  }
 
   // ---------- デイリーボーナス ----------
   /** その時刻が属する「日」の鍵。朝 resetHour 時で切り替わる(夜中に 2 回受け取れないように) */
@@ -157,7 +282,7 @@ export class Game {
   /** いま買える品物の一覧 [{ item, price, can }]。can は Coin が足りて、かつ買う意味がある(残り 0 など)とき。 */
   shopItems() {
     const st = this.stage, p = this.shopPrices, out = [];
-    if (!st || st.status !== 'play') return out;
+    if (!st || st.status !== 'play' || this.cfg.vsMode || this.cfg.dailyChallenge) return out;
     if (p.hint) out.push({ item: 'hint', price: p.hint, can: this.coins >= p.hint && st.hintsLeft <= 0 && !st.fever });
     if (p.add) out.push({ item: 'add', price: p.add, can: this.coins >= p.add && st.addsLeft <= 0 });
     if (p.heart) out.push({ item: 'heart', price: p.heart, can: this.coins >= p.heart && this.run.lives < this.cfg.lives.max });
@@ -222,6 +347,7 @@ export class Game {
       st.skill = null; st.selected = null; st.hintPair = null; st.scope = null;
       st.stageScore += points; this.run.score += points;
       st.board = after;
+      st.specials = shiftSpecials(st.specials, [r]);
       st.history.push({ type: 'skill', skill: 'line', board: b, row: r, points, price: sk.price });
       const events = [{ type: 'skillLine', row: r, points, price: sk.price, coins: this.coins, boardBefore: before, board: after, mult, chain: st.chain, heat: this.heat }];
       events.push(...this.afterBoardChange());
@@ -293,7 +419,7 @@ export class Game {
   newRun(stageIndex = 0) {
     // 前の Run の GAMBIT(GLASS など)が cfg.lives.start に残らないよう、先に run を外してから初期ライフを読む
     this.run = null;
-    this.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null, maxChain: 0, reviews: [], savedAdds: 0, investChain: 0, investAdds: 0, bonusAdds: 0 };
+    this.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null, maxChain: 0, reviews: [], savedAdds: 0, investChain: 0, investAdds: 0, bonusAdds: 0, gambits: [], gambit: null, gambitOffer: null, gambitPending: false };
     this.progress.runs += 1;
     return this.startStage();
   }
@@ -311,16 +437,36 @@ export class Game {
       // CLASSIC の投資は「次の World の各 Stage の Add +N」。World の最初に受け取り、World の間ずっと効く
       this.run.bonusAdds = this.classic ? (this.run.investAdds ?? 0) : 0;
       this.run.investChain = 0; this.run.investAdds = 0; this.run.savedAdds = 0;
-      // HARD: 前の World の GAMBIT は外れ、新しい候補を出す(種は Run の回数と Stage から。同じ Run の同じ World なら同じ 3 枚)
+      // HARD: 前の World の GAMBIT は外れ、新しい候補を出す
       if (this.hard) {
         this.run.gambit = null;
+        this.run.gambits = [];
+        this.run.gambitPending = true;
         this.run.gambitOffer = pickGambits((this.progress.runs ?? 0) * 131 + this.run.stageIndex * 7 + 1, this.cfg.hard.gambitOffer);
+      }
+      // ROGUE: 前の World の札を残したまま、まだ持っていない札から新しい 3 枚を提示(上限まで積み上げ)
+      if (this.rogue) {
+        const cap = this.baseCfg.rogue?.maxGambits ?? 4;
+        const owned = this.run.gambits ?? [];
+        if (owned.length < cap) {
+          this.run.gambitPending = true;
+          this.run.gambitOffer = pickGambits((this.progress.runs ?? 0) * 173 + this.run.stageIndex * 11 + 3, this.baseCfg.rogue?.gambitOffer ?? 3, owned);
+        } else {
+          this.run.gambitPending = false;
+          this.run.gambitOffer = null;
+        }
       }
     }
     const fever = carry && carry.fever ? { until: carry.fever.until, startedAt: carry.fever.startedAt ?? now } : null;
-    const addsTotal = this.classic ? this.cfg.classic.addsPerStage + (this.run.bonusAdds ?? 0) : this.hard ? this.cfg.hard.addsPerStage : def.adds;
+    const addsTotal = this.classic
+      ? this.cfg.classic.addsPerStage + (this.run.bonusAdds ?? 0)
+      : this.hard
+        ? this.cfg.hard.addsPerStage
+        : Math.max(1, def.adds + (this.cfg.bonusAddsDelta ?? 0));
+    const board = variant.cells.slice();
     this.run.stage = {
-      board: variant.cells.slice(),
+      board,
+      specials: placeSpecials(this.cfg, def.stage, board, { classic: this.classic }),
       addsLeft: addsTotal,
       addsTotal,
       addsUsed: 0,
@@ -343,9 +489,9 @@ export class Game {
       firstDigitCleared: null,
     };
     this.save();
-    const events = [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex, carried: !!carry, quest: this.run.stage.quest, invest, bonusAdds: worldStart ? (this.run.bonusAdds ?? 0) : 0, classic: this.classic, hard: this.hard }];
+    const events = [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex, carried: !!carry, quest: this.run.stage.quest, invest, bonusAdds: worldStart ? (this.run.bonusAdds ?? 0) : 0, classic: this.classic, hard: this.hard, rogue: this.rogue }];
     const offer = this.pendingGambit;
-    if (offer) events.push({ type: 'gambit', options: offer });
+    if (offer) events.push({ type: 'gambit', options: offer, owned: this.gambitList });
     return events;
   }
 
@@ -463,6 +609,10 @@ export class Game {
     // 難しい道・速さの倍率
     const info = pathInfo(b, i, j);
     const diffFull = difficultyMult(cfg.difficulty, info);
+    // SNIPER 札: 隣どうしの基礎倍率を下げる
+    if (!this.classic && info?.kind === 'adjacent' && cfg.perks?.adjacentMult) {
+      diffFull.mult = Math.round(diffFull.mult * cfg.perks.adjacentMult * 100) / 100;
+    }
     // CLASSIC: 難しさの倍率は無く、横の隣どうし以外に小さな定額の加点
     const pathBonus = this.classic && info && info.kind !== 'adjacent' ? cfg.classic.pathBonus : 0;
     const diff = this.classic ? { mult: 1, labels: diffFull.labels } : diffFull;
@@ -471,10 +621,42 @@ export class Game {
     st.lastRemoveAt = now;
     st.decayed = 0;
 
-    // Chain: 補助を受けた Pair(HINT / SCOPE)は増えない。それ以外は +1
+    // 特殊タイル(GOLD / 導火線)の判定と更新
+    const spMap = st.specials ?? {};
+    let goldHits = 0, fuseHits = 0;
+    for (const p of [i, j]) {
+      const sp = spMap[p];
+      if (!sp) continue;
+      if (sp.type === 'gold') goldHits += 1;
+      if (sp.type === 'fuse' && sp.left > 0) fuseHits += 1;
+    }
+    // 残りの導火線を 1 手進め、0 になったら鎮火。行縮約に合わせて位置を詰める
+    const nextSpecialsRaw = {};
+    let fuseExpired = 0;
+    for (const [k, sp] of Object.entries(spMap)) {
+      const p = Number(k);
+      if (p === i || p === j) continue;
+      if (sp.type === 'fuse') {
+        if (sp.left > 1) nextSpecialsRaw[p] = { type: 'fuse', left: sp.left - 1 };
+        else fuseExpired += 1;
+      } else {
+        nextSpecialsRaw[p] = sp;
+      }
+    }
+    st.specials = shiftSpecials(nextSpecialsRaw, clearedRows);
+
+    // DIGIT CLEAR: この 1 手で Board から消え切った数字(残りが 0 になった数字)
+    const left = new Set(numbers(after));
+    const digitsCleared = [...new Set([b[i], b[j]])].filter((d) => !left.has(d)).sort();
+
+    // Chain: 補助を受けた Pair(HINT / SCOPE)は増えない。それ以外は +1(+ GAMBIT パーク)
     const assisted = hinted || scoped;
     const chainBefore = st.chain;
-    if (!assisted) st.chain += 1;
+    if (!assisted) {
+      st.chain += 1;
+      if (clearedRows.length > 0 && cfg.perks?.lineExtraChain) st.chain += cfg.perks.lineExtraChain;
+      if (digitsCleared.length > 0 && cfg.perks?.digitExtraChain) st.chain += cfg.perks.digitExtraChain;
+    }
     st.maxChain = Math.max(st.maxChain ?? 0, st.chain);
     this.run.maxChain = Math.max(this.run.maxChain ?? 0, st.chain);
     const mult = this.multiplier;
@@ -482,19 +664,23 @@ export class Game {
     let feverExtendMs = 0;
     if (st.fever) {
       const cap = (st.fever.startedAt ?? now) + cfg.fever.maxTotalMs;
-      const extended = Math.max(st.fever.until, Math.min(st.fever.until + cfg.fever.extendMs, cap));
+      const addMs = cfg.fever.extendMs
+        + (fuseHits > 0 ? (cfg.special?.fuseFeverExtendMs ?? 0) * fuseHits : 0)
+        + (clearedRows.length > 0 ? (cfg.perks?.lineFeverExtendMs ?? 0) : 0);
+      const extended = Math.max(st.fever.until, Math.min(st.fever.until + addMs, cap));
       feverExtendMs = extended - st.fever.until;
       st.fever.until = extended;
     }
     const feverMult = st.fever ? cfg.fever.pointMult : 1;
     const hintedRatio = hinted ? cfg.score.hintedPairRatio : 1;
-    const pairPoints = Math.round(cfg.score.pairBase * diff.mult * mult * speed.mult * feverMult * hintedRatio) + pathBonus;
-    const rowPoints = Math.round(cfg.score.rowClear * clearedRows.length * clearedRows.length * mult * feverMult);
-    // DIGIT CLEAR: この 1 手で Board から消え切った数字(残りが 0 になった数字)
-    const left = new Set(numbers(after));
-    const digitsCleared = [...new Set([b[i], b[j]])].filter((d) => !left.has(d)).sort();
-    const digitPoints = Math.round((this.classic ? cfg.classic.digitClear : cfg.score.digitClear) * digitsCleared.length * mult * feverMult);
-    const points = pairPoints + rowPoints + digitPoints;
+    const goldMult = goldHits > 0 ? Math.pow(cfg.special?.goldMult ?? 2, goldHits) : 1;
+    const pairPoints = Math.round(cfg.score.pairBase * diff.mult * mult * speed.mult * feverMult * hintedRatio * goldMult) + pathBonus;
+    const rowPoints = Math.round(cfg.score.rowClear * clearedRows.length * clearedRows.length * mult * feverMult * goldMult);
+    const digitPoints = Math.round((this.classic ? cfg.classic.digitClear : cfg.score.digitClear) * digitsCleared.length * mult * feverMult * goldMult);
+    const fusePoints = fuseHits > 0 ? Math.round((cfg.special?.fuseBonus ?? 300) * fuseHits * mult * feverMult) : 0;
+    const goldCoins = goldHits > 0 && !cfg.vsMode ? (cfg.special?.goldCoins ?? 100) * goldHits : 0;
+    if (goldCoins > 0) this.coins += goldCoins;
+    const points = pairPoints + rowPoints + digitPoints + fusePoints;
     st.stageScore += points;
     this.run.score += points;
     st.selected = null;
@@ -508,7 +694,7 @@ export class Game {
     if (scoped) labels.push('SCOPE');
     if (hinted) labels.push('HINTED');
     events.push({
-      type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints, digitPoints, digitsCleared,
+      type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints, digitPoints, fusePoints, goldHits, goldMult, goldCoins, fuseHits, fuseExpired, digitsCleared,
       chain: st.chain, mult, heat: this.heat, clearedRows, boardBefore: before, board: after,
       path: info, diffMult: diff.mult, pathBonus, labels, speed: speed.tier, speedMult: speed.mult, elapsed, classic: this.classic,
       fever: !!st.fever, feverExtendMs, feverUntil: st.fever?.until ?? null, hinted, scoped, scopeBroken, skill,
@@ -712,8 +898,8 @@ export class Game {
     const stageBestUpdated = !st.coinUsed && st.stageScore > prevBest;   // Coin(ショップ・必殺技)を使った Stage は腕前の記録に数えない
     if (!this.progress.stageBest) this.progress.stageBest = {};
     if (stageBestUpdated) this.progress.stageBest[def.stage] = st.stageScore;
-    // Coin: Stage の得点がそのまま貯まる(HARD は × coinMult)
-    const coinMult = this.hard ? cfg.hard.coinMult : 1;
+    // Coin: Stage の得点がそのまま貯まる(HARD / ROGUE は × coinMult)
+    const coinMult = this.hard ? cfg.hard.coinMult : this.rogue ? (cfg.rogue?.coinMult ?? 1) : 1;
     const coinsGained = Math.floor(st.stageScore * coinMult);
     this.coins += coinsGained;
     this.save();
@@ -727,7 +913,7 @@ export class Game {
       chain: st.chain, mult: this.multiplier, fever: !!st.fever,
       maxMult: this.multiplierFor(st.maxChain ?? 0), runMaxMult: this.multiplierFor(this.run.maxChain ?? 0),
       quest: st.quest, questBonus, savedAdds: this.run.savedAdds, investChain, investHearts, investAdds, classic: this.classic,
-      hard: this.hard, gambit: this.gambit,
+      hard: this.hard, rogue: this.rogue, gambit: this.gambit, gambits: this.gambitList,
     }];
   }
 

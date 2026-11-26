@@ -121,11 +121,12 @@ export const CONFIG = {
     fxScale: 0.5,            // 粒子の量の倍率。揺れ・ヒットストップ・画面の点滅は無し
     feverCalm: true,
   },
-  // Coin: THE TEN で Stage を Clear すると、その Stage の得点がそのまま貯まる(Best Score とは別の累計)。ショップとスロットで使う
+  // Coin: THE TEN で Stage を Clear すると、その Stage の得点がそのまま貯まる(Best Score とは別の累計)。ショップとスロットとカスタマイズで使う
   shop: {
     normal:  { hint: 5000,  add: 10000, heart: 20000 },
     classic: { hint: 1500,  add: 3000 },                   // CLASSIC に Heart は無い
     hard:    { hint: 5000,  add: 10000, heart: 20000 },
+    rogue:   { hint: 5000,  add: 10000, heart: 20000 },
   },
   // 必殺技(Stage 中に大量の Coin で使う)。snipe: 位置に関係なく Pair を 1 組消す。line: 1 行を丸ごと消す
   // 使った Stage は Stage ごとの最高得点に数えない(ショップで買った Stage も同じ)
@@ -133,6 +134,39 @@ export const CONFIG = {
     normal:  { snipe: 5000, line: 20000 },
     classic: { snipe: 1500, line: 6000 },
     hard:    { snipe: 5000, line: 20000 },
+    rogue:   { snipe: 5000, line: 20000 },
+  },
+  // 盤面の特殊タイル(全消し条件を変えずに、毎ステージの作戦とジレンマを作る)
+  special: {
+    goldCount: 2,            // GOLDEN(×2)タイルの基本枚数
+    goldMult: 2,             // 1 枚含むごとに得点 ×2(2 枚同時なら ×4)
+    goldCoins: 100,          // 消したときの即時 Coin ボーナス(1 枚あたり)
+    fuseCount: 1,            // カウントダウン・ターゲット(導火線)の基本枚数(60 マス以上は +1)
+    fuseTurns: 6,            // 何手以内に消せば成功か
+    fuseBonus: 300,          // 成功時の加点(× Chain 倍率)
+    fuseFeverExtendMs: 2000, // FEVER 中に成功したときの追加延長
+  },
+  // ROGUE モード: World を越えるたびに GAMBIT が積み上がるローグライト版(最大 maxGambits 枚までシナジーを組める)
+  rogue: {
+    maxGambits: 4,
+    gambitOffer: 3,
+    coinMult: 1.5,
+  },
+  // 恒久アンロック(Coin で開放する見た目・音色。Stage Best の公平性には影響しない)
+  customize: {
+    themes: [
+      { id: 'midnight', name: 'Midnight', desc: '標準のダークブルー', price: 0 },
+      { id: 'cyber',    name: 'Cyber Neon', desc: 'シアンとマゼンタが映えるネオン調', price: 3000 },
+      { id: 'matcha',   name: 'Matcha Gold', desc: '深い抹茶と金の落ち着いた和モダン', price: 5000 },
+      { id: 'sunset',   name: 'Sunset Ember', desc: '夕暮れの琥珀と深紅の暖かい配色', price: 8000 },
+      { id: 'ivory',    name: 'Ivory Paper', desc: '明るい紙面のようなライトテーマ', price: 12000 },
+    ],
+    sounds: [
+      { id: 'synth',    name: 'Soft Synth', desc: '標準の柔らかい三角波シンセ', price: 0 },
+      { id: 'bell',     name: 'Crystal Bell', desc: '透き通る鉄琴・ベルの響き', price: 4000 },
+      { id: 'chiptune', name: '8-bit Chip', desc: 'レトロなゲーム機風の矩形波サウンド', price: 6000 },
+      { id: 'marimba',  name: 'Warm Marimba', desc: '木の温もりがある丸い打鍵音', price: 10000 },
+    ],
   },
   // HARD モード(NORMAL で World 6 を制覇すると開放。NORMAL の高難易度周回で、記録は別枠)。
   // 代償: Add 1 回・Heart 2・Hint 2・Chain の減りが速い。見返り: 得点 ×2(Rank の基準も ×2)・Coin ×3。

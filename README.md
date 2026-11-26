@@ -27,7 +27,7 @@ cabal run gen      # web/levels/stages.json と web/test/vectors.json を書き�
 ブラウザ側はリポジトリルートで実行します。
 
 ```powershell
-node --test web/test/*.test.js            # ルールの移植が Haskell と一致するか、進行のテスト(74 件)
+node --test web/test/*.test.js            # ルールの移植が Haskell と一致するか、進行のテスト(79 件)
 python -m http.server 8765 --bind 127.0.0.1 --directory web   # 手元で動かす
 ```
 

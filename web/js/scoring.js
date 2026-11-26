@@ -4,7 +4,7 @@
 //   speedTier        … 前の消去からの時間に応じた倍率とラベル
 //   sightLines       … 選んだマスから見える先(描画の補助。斜めの道を見やすくする)
 
-import { WIDTH, rowOf, colOf, cellAt } from './rules.js';
+import { WIDTH, rowOf, colOf, cellAt, validPairs, rows } from './rules.js';
 
 // 道の候補。step は添字の進み方(rules.js の connected と同じ)。
 const PATHS = [
@@ -95,4 +95,39 @@ export function sightLines(board, pos) {
     }
   }
   return { ray, reach };
+}
+
+/**
+ * 盤面の計画を助ける予告情報(ルール正否には関わらない)。
+ *   digitCounts   … 1〜9 ごとの残数
+ *   finishingDigits … 残り 1〜2 個で、今ある Pair 1 手で DIGIT CLEAR できる数字の Set
+ *   almostRows    … あと 1 手で丸ごと消せる行インデックスの Set
+ */
+export function boardInsights(board) {
+  const digitCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0 };
+  for (const c of board) if (c >= 1 && c <= 9) digitCounts[c] += 1;
+  const pairs = validPairs(board);
+  const finishingDigits = new Set();
+  for (const [i, j] of pairs) {
+    const a = board[i], b = board[j];
+    if (a === b) {
+      if (digitCounts[a] <= 2) finishingDigits.add(a);
+    } else {
+      if (digitCounts[a] === 1) finishingDigits.add(a);
+      if (digitCounts[b] === 1) finishingDigits.add(b);
+    }
+  }
+  const rowList = rows(board);
+  const rowNonZero = rowList.map((r) => r.filter((c) => c !== 0).length);
+  const almostRows = new Set();
+  for (const [i, j] of pairs) {
+    const ri = rowOf(i), rj = rowOf(j);
+    if (ri === rj) {
+      if (rowNonZero[ri] === 2) almostRows.add(ri);
+    } else {
+      if (rowNonZero[ri] === 1) almostRows.add(ri);
+      if (rowNonZero[rj] === 1) almostRows.add(rj);
+    }
+  }
+  return { digitCounts, finishingDigits, almostRows };
 }
