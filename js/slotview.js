@@ -254,7 +254,6 @@ export class SlotView {
   }
 
   markHits(line) {
-    const LINES = [[1, 1, 1], [0, 0, 0], [2, 2, 2], [0, 1, 2], [2, 1, 0]];
     LINES[line].forEach((row, k) => this.reels[k].cells[row + 1]?.classList.add('hit'));
   }
   clearHits() { for (const r of this.reels) for (const c of r.cells) c.classList.remove('hit'); }

@@ -1,6 +1,6 @@
 {
-  "name": "TEN — Number Match",
-  "short_name": "TEN",
+  "name": "THE TEN — Number Match",
+  "short_name": "THE TEN",
   "description": "広告なしの Number Match。同じ数字か、たして 10 になる 2 つを消す。",
   "start_url": "./",
   "scope": "./",

@@ -1,6 +1,5 @@
 /* ============================================================
-   TEN — Number Match  共通スタイル
-   study_planner の world view(dark / DM Mono + Noto Serif JP)を踏襲
+   THE TEN — Number Match  共通スタイル
    ============================================================ */
 
 :root {
@@ -325,7 +324,9 @@ body.fever:not(.classic) .fever-label { animation:fever-label 0.4s steps(2) infi
 .worlds .btn small { font-size:9px; letter-spacing:1px; color:var(--text-dim); text-transform:none; }
 .ranks { display:flex; gap:10px; justify-content:center; font-family:var(--font-mono); font-size:11px; letter-spacing:1px; }
 .ranks .S { color:var(--amber); } .ranks .A { color:var(--rose); } .ranks .B { color:var(--blue); } .ranks .C { color:var(--text-muted); }
-.card .rules { font-size:13px; line-height:1.9; color:var(--text-muted); font-weight:300; margin-top:12px; text-wrap:pretty; }
+.card .rules { font-size:13px; line-height:1.85; color:var(--text-muted); font-weight:300; margin-top:12px; text-wrap:pretty; }
+.card .rules p { margin-bottom:10px; }
+.card .rules p:last-child { margin-bottom:0; }
 .card .rules b { color:var(--text); font-weight:500; }
 .card .rules .ex { font-family:var(--font-mono); color:var(--heat); }
 .meta { font-family:var(--font-mono); font-size:10px; letter-spacing:1.5px; color:var(--text-dim); margin-top:14px; text-align:center; }

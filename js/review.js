@@ -16,17 +16,20 @@ import { pathInfo, difficultyMult } from './scoring.js';
 import { solve } from './solver.js';
 
 /** 1 手の得点の見積もり(Speed と FEVER を除く)。row と digit も含める。 */
-export function estimatePoints(cfg, board, i, j, chainAfter) {
-  const mult = Math.min(cfg.chain.max, 1 + cfg.chain.step * chainAfter);
-  const diff = difficultyMult(cfg.difficulty, pathInfo(board, i, j));
+export function estimatePoints(cfg, board, i, j, chainAfter, { classic = false } = {}) {
+  const mult = classic ? 1 : Math.min(cfg.chain.max, 1 + cfg.chain.step * chainAfter);
+  const info = pathInfo(board, i, j);
+  const diffFull = difficultyMult(cfg.difficulty, info);
+  const pathBonus = classic && info && info.kind !== 'adjacent' ? cfg.classic.pathBonus : 0;
+  const diff = classic ? { mult: 1, labels: diffFull.labels } : diffFull;
   const before = removePair(i, j, board);
   const clearedRows = rows(before).filter((r) => r.every((c) => c === 0)).length;
   const after = collapseRows(before);
   const left = new Set(numbers(after));
   const digits = [...new Set([board[i], board[j]])].filter((d) => !left.has(d)).length;
-  const pair = Math.round(cfg.score.pairBase * diff.mult * mult);
+  const pair = Math.round(cfg.score.pairBase * diff.mult * mult) + pathBonus;
   const row = Math.round(cfg.score.rowClear * clearedRows * clearedRows * mult);
-  const digit = Math.round(cfg.score.digitClear * digits * mult);
+  const digit = Math.round((classic ? cfg.classic.digitClear : cfg.score.digitClear) * digits * mult);
   return { total: pair + row + digit, pair, row, digit, clearedRows, digits, after, labels: diff.labels };
 }
 
@@ -34,9 +37,9 @@ export function estimatePoints(cfg, board, i, j, chainAfter) {
  * ある局面で取れる手を全部評価し、全消しを保つ手の中で得点最大のものを返す。
  * 返り値: { best, options } 。best は null のこともある(どの手でも全消しできない)。
  */
-export function bestMove(cfg, board, chainBefore, budget = 1200) {
+export function bestMove(cfg, board, chainBefore, budget = 1200, { classic = false } = {}) {
   const options = validPairs(board).map(([i, j]) => {
-    const est = estimatePoints(cfg, board, i, j, chainBefore + 1);
+    const est = estimatePoints(cfg, board, i, j, chainBefore + 1, { classic });
     const solvable = est.after.every((c) => c === 0) || solve(est.after, budget) !== null;
     return { i, j, points: est.total, est, solvable };
   });
@@ -47,18 +50,18 @@ export function bestMove(cfg, board, chainBefore, budget = 1200) {
 }
 
 /** 1 Stage の記録を評価する。history は game.js が積んだ配列。 */
-export function analyzeStage(cfg, history, { budget = 1200 } = {}) {
+export function analyzeStage(cfg, history, { budget = 1200, classic = false } = {}) {
   const moves = [];
   let missed = 0, blunders = 0, bestCount = 0, maxChain = 0;
   for (const [k, h] of history.entries()) {
     if (h.type === 'remove') {
       maxChain = Math.max(maxChain, h.chain);
-      const { best, options, anySolvable } = bestMove(cfg, h.board, h.chainBefore, budget);
+      const { best, options, anySolvable } = bestMove(cfg, h.board, h.chainBefore, budget, { classic });
       const mine = options.find((o) => o.i === h.i && o.j === h.j) ?? null;
       let verdict = 'good', text = '';
       if (mine && !mine.solvable && anySolvable) {
         verdict = 'blunder'; blunders += 1;
-        text = `この手で Add なしの全消しができなくなった。${best ? `${best.i + 1}番目と ${best.j + 1}番目(${h.board[best.i]} と ${h.board[best.j]})なら続けられた` : ''}`;
+        text = `この手で Add なしの全消しができなくなった。${best ? `${best.i + 1} 番目と ${best.j + 1} 番目(${h.board[best.i]} と ${h.board[best.j]})なら続けられた` : ''}`;
       } else if (best && mine && best.points >= mine.points + 100 && best.points >= mine.points * 1.5) {
         verdict = 'missed'; missed += best.points - mine.points;
         const why = best.est.clearedRows ? '行が消えた' : best.est.digits ? 'DIGIT CLEAR になった' : best.est.labels[0] ?? '難しい道';
@@ -87,7 +90,7 @@ export function analyzeStage(cfg, history, { budget = 1200 } = {}) {
     moves,
     summary: {
       removes, bestCount, blunders, missed,
-      maxChain, maxMult: Math.min(cfg.chain.max, 1 + cfg.chain.step * maxChain),
+      maxChain, maxMult: classic ? 1 : Math.min(cfg.chain.max, 1 + cfg.chain.step * maxChain),
       rowsCleared: history.filter((h) => h.type === 'remove').reduce((a, h) => a + (h.clearedRows?.length ?? 0), 0),
       digitClears: history.filter((h) => h.type === 'remove').reduce((a, h) => a + (h.digitsCleared?.length ?? 0), 0),
     },

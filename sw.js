@@ -1,10 +1,10 @@
 // Service Worker: 一度開いたら電波が無くても遊べるようにファイルを手元に置く。
 // 更新のたびに VERSION を上げると古いキャッシュが捨てられる。
-const VERSION = 'ten-v33';
+const VERSION = 'ten-v34';
 const FILES = [
   './', './index.html', './manifest.json',
   './css/style.css',
-  './js/main.js', './js/game.js', './js/rules.js', './js/render.js', './js/fx.js', './js/audio.js', './js/music.js', './js/melodies.js', './js/vs.js', './js/review.js', './js/quest.js', './js/slot.js', './js/slotview.js', './js/config.js', './js/gambit.js',
+  './js/main.js', './js/game.js', './js/rules.js', './js/scoring.js', './js/solver.js', './js/render.js', './js/fx.js', './js/audio.js', './js/music.js', './js/melodies.js', './js/vs.js', './js/review.js', './js/quest.js', './js/slot.js', './js/slotview.js', './js/config.js', './js/gambit.js',
   './levels/stages.json',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
 ];
@@ -23,10 +23,13 @@ self.addEventListener('activate', (e) => {
 // ネットワーク優先、失敗したらキャッシュ(更新を取り込みつつオフラインでも動く)
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  const sameOrigin = new URL(e.request.url).origin === self.location.origin;
   e.respondWith(
     fetch(e.request).then((res) => {
-      const copy = res.clone();
-      caches.open(VERSION).then((c) => c.put(e.request, copy)).catch(() => {});
+      if (sameOrigin && res.ok) {
+        const copy = res.clone();
+        caches.open(VERSION).then((c) => c.put(e.request, copy)).catch(() => {});
+      }
       return res;
     }).catch(() => caches.match(e.request))
   );

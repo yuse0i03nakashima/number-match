@@ -150,7 +150,7 @@ export const CONFIG = {
       rank: { perCell: 200 },
     },
   },
-  // スロット(SLOT タブ。Coin を賭けて Coin を得る別ゲーム)。確率は 1 回転ごと。払い戻し率の目安は 90%(simulate で測る)
+  // スロット(SLOT タブ。Coin を賭けて Coin を得る別ゲーム)。確率は 1 回転ごと。払い戻し率の目安は約 160%(simulate で測る)
   slot: {
     bets: [5, 10, 25, 50, 100, 250, 500, 1000],       // BET の選択肢。任意の枚数も入力できる(1 枚以上、残高まで)
     defaultBet: 10,
