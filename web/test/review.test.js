@@ -22,6 +22,10 @@ test('estimatePoints: 行消しと DIGIT CLEAR を含む見積もり', () => {
   assert.equal(e.clearedRows, 1);
   assert.equal(e.digits, 2);                                // 1 と 9 が消え切る
   assert.ok(e.total > e.pair);
+  const ec = estimatePoints(CONFIG, board, 0, 1, 5, { classic: true });
+  assert.equal(ec.pair, CONFIG.score.pairBase);
+  assert.equal(ec.row, CONFIG.score.rowClear);
+  assert.equal(ec.digit, CONFIG.classic.digitClear * 2);
 });
 
 test('bestMove: 全消しを保つ手の中で得点が最大の手を選ぶ', () => {

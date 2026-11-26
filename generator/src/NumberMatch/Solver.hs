@@ -12,7 +12,7 @@ import Data.List (sortOn)
 import NumberMatch.Board
 import NumberMatch.Rules
 
--- | 一度調べた (ボード面, 残り追加回数) の集合。同じ状態を二度調べない。
+-- | 一度調べた (盤面, 残り追加回数) の集合。同じ状態を二度調べない。
 type Visited = Set.Set (Board, Int)
 
 -- | 探索の本体。返り値は (見つけた手順, 残り予算, 調べた状態)。

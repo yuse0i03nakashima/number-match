@@ -192,7 +192,7 @@ async function boot() {
           fx.fireworks(5);
           punch();
           fx.floatText(innerWidth / 2, innerHeight * 0.4, 'FEVER!!', { color: PALETTE.rose, size: 44, dy: -40, life: 1.6 });
-          fx.floatText(innerWidth / 2, innerHeight * 0.4 + 40, `${CONFIG.fever.durationMs / 1000} 秒間 Score ×${CONFIG.fever.pointMult}`, { color: PALETTE.white, size: 14, dy: -30, life: 1.6 });
+          fx.floatText(innerWidth / 2, innerHeight * 0.4 + 40, `${game.cfg.fever.durationMs / 1000} 秒間 Score ×${game.cfg.fever.pointMult}`, { color: PALETTE.white, size: 14, dy: -30, life: 1.6 });
           ui.renderHud(game);
           break;
         }
@@ -213,7 +213,7 @@ async function boot() {
           const name = { hint: 'Hint', add: 'Add', heart: 'Heart' }[ev.item];
           sound.lifeGain(); vibrate([20, 30, 20]);
           ui.toast(`${name} を購入 −${fmt(ev.price)} coin(残り ${fmt(ev.coins)})`, 2200);
-          if (ev.item === 'heart') ui.renderLives(ev.lives, CONFIG.lives.max, { gained: true });
+          if (ev.item === 'heart') ui.renderLives(ev.lives, game.cfg.lives.max, { gained: true });
           ui.renderHud(game);
           break;
         }
@@ -256,7 +256,7 @@ async function boot() {
           sound.flash();
           redraw({ flashPairs: ev.pairs });
           for (const [a, b] of ev.pairs) { const ca = ui.cellCenter(a), cb = ui.cellCenter(b); if (ca && cb) fx.flashLine(ca.x, ca.y, cb.x, cb.y, PALETTE.amber, 2); }
-          ui.toast(`FLASH: 消せる Pair ${ev.pairs.length} 組`, CONFIG.hint.flashMs);
+          ui.toast(`FLASH: 消せる Pair ${ev.pairs.length} 組`, game.cfg.hint.flashMs);
           break;
         }
         case 'flashEnd': redraw(); break;
@@ -272,7 +272,7 @@ async function boot() {
           sound.scopeMiss(); vibrate([40, 30, 40]);
           fx.flash('rgba(239,68,68,0.2)');
           ui.renderHud(game);
-          ui.toast(ev.misses === 1 ? `外した… Chain −${CONFIG.hint.scopeMissChain} (×${ev.mult.toFixed(1)})` : `2 回目… Chain 半分 (×${ev.mult.toFixed(1)})、SCOPE 終了`, 2200);
+          ui.toast(ev.misses === 1 ? `外した… Chain −${game.cfg.hint.scopeMissChain} (×${ev.mult.toFixed(1)})` : `2 回目… Chain 半分 (×${ev.mult.toFixed(1)})、SCOPE 終了`, 2200);
           break;
         }
         case 'scopeEnd': {
@@ -317,7 +317,7 @@ async function boot() {
           ui.renderQuest(ev.quest);
           if (ev.done) {
             sound.digitClear(2); vibrate([30, 40, 80]);
-            fx.floatText(innerWidth / 2, innerHeight * 0.3, `QUEST CLEAR  +${CONFIG.quest.bonus}`, { color: PALETTE.green, size: 26, dy: -40, life: 1.8 });
+            fx.floatText(innerWidth / 2, innerHeight * 0.3, `QUEST CLEAR  +${fmt(game.cfg.quest.bonus)}`, { color: PALETTE.green, size: 26, dy: -40, life: 1.8 });
             fx.fireworks(2);
           } else if (ev.failed) {
             ui.toast(`お題「${ev.quest.text}」は失敗`, 2000);
@@ -489,29 +489,32 @@ async function boot() {
 
   async function onStageClear(ev) {
     busy = true;
-    await sleep(200);
-    sound.stageClear();
-    fx.fireworks(ev.perfect ? 9 : 6);
-    punch();
-    if (ev.perfect) { setTimeout(() => sound.perfect(), 300); fx.flash('rgba(62,207,142,0.2)'); }
-    vibrate([40, 60, 40, 60, 120]);
-    // Board を全部消した: ALL CLEAR の表示。Chain と FEVER は次の Stage へ続く
-    const cx = innerWidth / 2, cy = innerHeight * 0.42;
-    fx.floatText(cx, cy, 'ALL CLEAR', { color: PALETTE.amber, size: 42, dy: -30, life: 2.0 });
-    fx.floatText(cx, cy + 44, `+${fmt(ev.clearBonus + ev.perfectBonus + ev.savedBonus + ev.hintBonus)}${ev.perfect ? '  PERFECT' : ''}`, { color: ev.perfect ? PALETTE.green : PALETTE.white, size: 20, dy: -30, life: 2.0 });
-    if (ev.chain > 0 && !ev.classic) fx.floatText(cx, cy + 76, `CHAIN ×${ev.mult.toFixed(1)} を持ち越し`, { color: heatColor(game.heat), size: 14, dy: -24, life: 2.0 });
-    if (ev.questBonus) fx.floatText(cx, cy + 100, `QUEST CLEAR  +${ev.questBonus}`, { color: PALETTE.green, size: 16, dy: -24, life: 2.0 });
-    if (ev.stageBestUpdated && ev.prevBest) fx.floatText(cx, cy + 124, `STAGE BEST  ${fmt(ev.stageBest)}`, { color: PALETTE.amber, size: 16, dy: -24, life: 2.0 });
-    if (ev.lifeGain) { ui.renderLives(game.run.lives, CONFIG.lives.max, { gained: true }); sound.lifeGain(); }
-    ui.renderHud(game);
-    if (CONFIG.flow.continueAfterClear && !ev.worldEnd && !ev.isLast) {
-      // 続けて次の Stage へ(Result の画面は World の終わりだけ)
-      await sleep(CONFIG.flow.autoNextMs);
-      busy = false;
-      handle(game.nextStage(Date.now()));
-      return;
+    if (!ev._replay) {
+      await sleep(200);
+      sound.stageClear();
+      fx.fireworks(ev.perfect ? 9 : 6);
+      punch();
+      if (ev.perfect) { setTimeout(() => sound.perfect(), 300); fx.flash('rgba(62,207,142,0.2)'); }
+      vibrate([40, 60, 40, 60, 120]);
+      // Board を全部消した: ALL CLEAR の表示。Chain と FEVER は次の Stage へ続く
+      const cx = innerWidth / 2, cy = innerHeight * 0.42;
+      fx.floatText(cx, cy, 'ALL CLEAR', { color: PALETTE.amber, size: 42, dy: -30, life: 2.0 });
+      fx.floatText(cx, cy + 44, `+${fmt(ev.clearBonus + ev.perfectBonus + ev.savedBonus + ev.hintBonus)}${ev.perfect ? '  PERFECT' : ''}`, { color: ev.perfect ? PALETTE.green : PALETTE.white, size: 20, dy: -30, life: 2.0 });
+      if (ev.chain > 0 && !ev.classic) fx.floatText(cx, cy + 76, `CHAIN ×${ev.mult.toFixed(1)} を持ち越し`, { color: heatColor(game.heat), size: 14, dy: -24, life: 2.0 });
+      if (ev.questBonus) fx.floatText(cx, cy + 100, `QUEST CLEAR  +${fmt(ev.questBonus)}`, { color: PALETTE.green, size: 16, dy: -24, life: 2.0 });
+      if (ev.stageBestUpdated && ev.prevBest) fx.floatText(cx, cy + 124, `STAGE BEST  ${fmt(ev.stageBest)}`, { color: PALETTE.amber, size: 16, dy: -24, life: 2.0 });
+      if (ev.lifeGain) { ui.renderLives(game.run.lives, game.cfg.lives.max, { gained: true }); sound.lifeGain(); }
+      ui.renderHud(game);
+      if (CONFIG.flow.continueAfterClear && !ev.worldEnd && !ev.isLast) {
+        // 続けて次の Stage へ(Result の画面は World の終わりだけ)
+        await sleep(CONFIG.flow.autoNextMs);
+        busy = false;
+        handle(game.nextStage(Date.now()));
+        return;
+      }
+      await sleep(900);
     }
-    await sleep(900);
+    const coinMultLabel = ev.hard && ev.coinMult && ev.coinMult !== 1 ? `(×${ev.coinMult})` : '';
     const card = ui.showOverlay(`
       <div class="eyebrow">${ev.isLast ? 'final stage' : `world ${game.worldOf(game.run.stageIndex) + 1} clear`} · stage ${pad2(ev.stage)}</div>
       <h1>${ev.perfect ? 'Perfect!' : 'World Clear'}</h1>
@@ -524,14 +527,14 @@ async function boot() {
         <div class="row"><span class="k">この Stage の Play Score</span><span class="v">${fmt(ev.playScore)}</span></div>
         <div class="row"><span class="k">ALL CLEAR Bonus</span><span class="v plus">+${fmt(ev.clearBonus)}</span></div>
         ${ev.perfect ? `<div class="row"><span class="k">Perfect Bonus</span><span class="v plus">+${fmt(ev.perfectBonus)}</span></div>` : ''}
-        ${ev.savedBonus ? `<div class="row"><span class="k">Add 温存 Bonus(${ev.addsLeft} 回)</span><span class="v plus">+${fmt(ev.savedBonus)}</span></div>` : ''}
-        ${ev.hintBonus ? `<div class="row"><span class="k">Hint 温存 Bonus(${ev.hintsLeft} 回)</span><span class="v plus">+${fmt(ev.hintBonus)}</span></div>` : ''}
+        ${ev.savedBonus ? `<div class="row"><span class="k">Add 温存 Bonus(${ev.addsSaved} 回)</span><span class="v plus">+${fmt(ev.savedBonus)}</span></div>` : ''}
+        ${ev.hintBonus ? `<div class="row"><span class="k">Hint 温存 Bonus(${ev.hintsSaved} 回)</span><span class="v plus">+${fmt(ev.hintBonus)}</span></div>` : ''}
         ${ev.questBonus ? `<div class="row"><span class="k">Quest「${ev.quest.text}」</span><span class="v plus">+${fmt(ev.questBonus)}</span></div>` : `<div class="row"><span class="k">Quest「${ev.quest?.text ?? ''}」</span><span class="v">未達成</span></div>`}
         ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
         ${ev.worldEnd && !ev.isLast && ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">各 Stage で Add +${ev.investAdds}</span></div>` : ''}
         ${ev.worldEnd && !ev.isLast && !ev.classic ? `<div class="row"><span class="k">温存した Add ${ev.savedAdds} 回 → 次の World</span><span class="v plus">開始 Chain +${ev.investChain}${ev.investHearts ? ` · Heart +${ev.investHearts}` : ''}</span></div>` : ''}
         <div class="row"><span class="k">この Stage の最高得点${ev.coinUsed ? '(Coin を使ったので更新なし)' : ''}</span><span class="v${ev.stageBestUpdated ? ' plus' : ''}">${fmt(ev.stageBest)}${ev.stageBestUpdated && ev.prevBest ? ' NEW!' : ''}</span></div>
-        <div class="row"><span class="k">Coin${ev.hard ? `(×${CONFIG.hard.coinMult}${ev.gambit && ev.gambit.id === 'glass' ? ' ×2' : ev.gambit && ev.gambit.id === 'reserve' ? ' ×0.5' : ''})` : ''}</span><span class="v plus">+${fmt(ev.coinsGained)} → ${fmt(ev.coins)}</span></div>
+        <div class="row"><span class="k">Coin${coinMultLabel}</span><span class="v plus">+${fmt(ev.coinsGained)} → ${fmt(ev.coins)}</span></div>
         ${ev.gambit ? `<div class="row"><span class="k">GAMBIT</span><span class="v">${ev.gambit.name}</span></div>` : ''}
         <div class="row"><span class="k">World の Rank</span><span class="v">${rankSummaryWorld(game.worldOf(game.run.stageIndex))}</span></div>
         ${ev.classic ? '' : `<div class="row"><span class="k">最高倍率(この Stage / Run)</span><span class="v">×${ev.maxMult.toFixed(1)} / ×${ev.runMaxMult.toFixed(1)}</span></div>`}
@@ -542,9 +545,14 @@ async function boot() {
         <button class="btn btn-ghost" id="ov-review">感想戦(手の評価)</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
       </div>`);
-    card.querySelector('#ov-review').onclick = () => showReview(() => onStageClear(ev));
-    ui.animateStars(card, ev.stars);
-    setTimeout(() => { card.querySelector('#ov-rank')?.classList.add('show'); if (ev.rank === 'S') { sound.perfect(); fx.fireworks(4); } }, 1100);
+    card.querySelector('#ov-review').onclick = () => showReview(() => onStageClear({ ...ev, _replay: true }));
+    if (ev._replay) {
+      card.querySelectorAll('.star').forEach((s, k) => { s.classList.add('show'); if (k < ev.stars) s.classList.add('on'); });
+      card.querySelector('#ov-rank')?.classList.add('show');
+    } else {
+      ui.animateStars(card, ev.stars);
+      setTimeout(() => { card.querySelector('#ov-rank')?.classList.add('show'); if (ev.rank === 'S') { sound.perfect(); fx.fireworks(4); } }, 1100);
+    }
     card.querySelector('#ov-next').onclick = () => { busy = false; handle(game.nextStage(Date.now())); };
     card.querySelector('#ov-title').onclick = () => { busy = false; showTitle(); };
   }
@@ -557,7 +565,7 @@ async function boot() {
     if (!reviews.length) { ui.toast('記録が無い'); return; }
     const idx = pick ?? reviews.length - 1;
     const rev = reviews[idx];
-    const a = analyzeStage(CONFIG, rev.history);
+    const a = analyzeStage(game.cfg, rev.history, { classic: game.classic });
     const mark = { best: '★', good: '○', missed: '△', blunder: '✖', note: '・' };
     const rowsHtml = a.moves.map((m, k) => {
       const head = m.type === 'remove' ? `${m.board[m.i]} と ${m.board[m.j]}  +${m.points}  ×${m.mult.toFixed(1)}` : m.type === 'add' ? 'ADD' : 'HINT';
@@ -604,19 +612,20 @@ async function boot() {
 
   async function onStageFailed(ev) {
     busy = true;
+    const maxLives = game.cfg.lives.max;
     if (!ev._replay) {
       if (ev.reason === 'giveUp') sound.giveUp(); else sound.fail();
       vibrate([80, 50, 80]);
-      if (!ev.classic) ui.renderLives(ev.lives + 1, CONFIG.lives.max, { lost: true });
+      if (!ev.classic) ui.renderLives(ev.lives + 1, maxLives, { lost: true });
       fx.flash('rgba(239,68,68,0.18)');
       fx.shake(ui.boardWrap, 8, 400);
       await sleep(900);
     }
-    const title = ev.reason === 'giveUp' ? 'Give Up' : ev.reason === 'blindHint' ? 'Stuck' : 'Stuck';
+    const title = ev.reason === 'giveUp' ? 'Give Up' : 'Stuck';
     const text = ev.reason === 'giveUp'
       ? 'Stage をあきらめた。Stage 得点の半分は獲得できる。'
       : ev.reason === 'blindHint'
-        ? '消せる Pair は無く Add も無いのに Hint を押してしまった… '
+        ? '消せる Pair も Add も無いのに Hint を押してしまった…'
         : '消せる Pair が無く、Add も残っていない…';
     const card = ui.showOverlay(`
       <div class="eyebrow">stage ${pad2(ev.stage)}</div>
@@ -625,7 +634,7 @@ async function boot() {
       <div class="rows">
         <div class="row"><span class="k">失った Stage 得点</span><span class="v minus">−${fmt(ev.lost)}</span></div>
         ${ev.kept ? `<div class="row"><span class="k">残った Stage 得点</span><span class="v plus">${fmt(ev.kept)}</span></div>` : ''}
-        ${ev.classic ? '' : `<div class="row"><span class="k">残り Heart</span><span class="v">${'♥'.repeat(ev.lives)}${'♡'.repeat(CONFIG.lives.max - ev.lives)}</span></div>`}
+        ${ev.classic ? '' : `<div class="row"><span class="k">残り Heart</span><span class="v">${'♥'.repeat(Math.max(0, ev.lives))}${'♡'.repeat(Math.max(0, maxLives - ev.lives))}</span></div>`}
         ${ev.classic ? '' : `<div class="row"><span class="k">最高倍率</span><span class="v">×${ev.maxMult.toFixed(1)}</span></div>`}
         <div class="row total"><span class="k">Score</span><span class="v">${fmt(game.run.score)}</span></div>
       </div>
@@ -642,7 +651,7 @@ async function boot() {
   async function onRunOver(ev) {
     busy = true;
     sound.runOver(); vibrate([120, 80, 200]);
-    ui.renderLives(1, CONFIG.lives.max, { lost: true });
+    ui.renderLives(1, game.cfg.lives.max, { lost: true });
     fx.flash('rgba(239,68,68,0.25)');
     fx.shake(ui.boardWrap, 10, 500);
     await sleep(1100);
@@ -650,7 +659,7 @@ async function boot() {
     const card = ui.showOverlay(`
       <div class="eyebrow">run over</div>
       <h1 class="big">${fmt(ev.score)}</h1>
-      <div class="ja">Heart が尽きた…${ev.score >= ev.best && ev.score > 0 ? 'Best Score 更新！！' : `Best ${fmt(ev.best)}`}</div>
+      <div class="ja">Heart が尽きた… ${ev.score >= ev.best && ev.score > 0 ? 'Best Score 更新！！' : `Best ${fmt(ev.best)}`}</div>
       <div class="rows">
         <div class="row"><span class="k">到達 Stage</span><span class="v">${pad2(ev.stage)}</span></div>
         <div class="row"><span class="k">最高倍率</span><span class="v">×${ev.runMaxMult.toFixed(1)}</span></div>
@@ -844,34 +853,34 @@ async function boot() {
       <div class="eyebrow">how to play</div>
       <h1>How to Play</h1>
       <div class="rules">
-        <b>Pair</b> とは、<span class="ex">同じ数字どうし</span>(4 と 4)か、<span class="ex">足して 10 になる 2 つ</span>(3 と 7、1 と 9)のこと。<br>
-        <b>消せる Pair</b> は、次のどちらかの位置にある Pair。<br>
-        ・縦・横・斜めの一直線上に並んでいて、2 つの間が全部空マス(隣どうしも含む)。<br>
-        ・順番(左から右、上から下)で続いていて、間が全部空マス。行の右端と次の行の左端も続きとみなす。<br>
-        <b>消し方</b>: 1 つ目の数字をタップし、2 つ目をタップする。Pair でなければ 2 つ目が選び直しになる。<br>
-        <b>Score</b>: 1 Pair の得点 = ${c.score.pairBase} 点 × 難しさ倍率 × Chain 倍率 × Speed 倍率。難しさ倍率は、横の隣どうし ×1.0、縦 ×${d.vertical}、行をまたぐ ×${d.wrap}、斜め ×${d.diagonal}。2 つの間の空マス 1 つごとに +${d.gapPerCell}(他を消して初めて可能になる消し方)、斜めなら +${d.diagonalGapPerCell}。<br>
-        <b>Chain</b>: Pair を消すたびに Chain 倍率が +${c.chain.step}(最大 ×${c.chain.max})。Add を使うと途切れて ×1.0 に戻る。${c.chain.decayGraceMs / 1000} 秒消さないでいると、${c.chain.decayStepMs / 1000} 秒ごとに 1 段階ずつ減る(ゲージ)。<br>
-        <b>FEVER</b>: 倍率が ×${c.chain.max} に達すると ${c.fever.durationMs / 1000} 秒間 Score ×${c.fever.pointMult}。その間 Chain は減らず、Pair を消すたびに残り時間が ${c.fever.extendMs / 1000} 秒延びる(全体で ${c.fever.maxTotalMs / 1000} 秒まで)。終わると Chain は半分になる。<br>
-        <b>Speed</b>: 前の消去から ${c.speed.quickMs / 1000} 秒以内なら QUICK(×${c.speed.quickMult})、${c.speed.fastMs / 1000} 秒以内なら FAST(×${c.speed.fastMult})。<br>
-        <b>DIGIT CLEAR</b>: ある数字(たとえば 3)を Board から全部消し切ると、1 つの数字ごとに +${c.score.digitClear} × Chain 倍率。Add で戻ってきたらまた狙える。<br>
-        <b>Line</b>: 1 行まるごと空になるとその行が Board から消え、${c.score.rowClear} 点 × (同時に消えた行数の 2 乗) × Chain 倍率が加算される。<br>
-        <b>Add</b>: Board に残っている数字と同じ数字を末尾に書き足す。並びは、足したあとの Board が Add なしで全消しできることを確かめたうえで選ぶ(確かめられないときは残っている順)。使える回数は Stage ごとに決まっている。<br>
-        <b>Hint</b>(使用上限 Stage ごとに ${h.perStage} 回。Chain 倍率で中身が変わる):<br>
+        <p><b>Pair</b>: <span class="ex">同じ数字どうし</span>(4 と 4)か、<span class="ex">足して 10 になる 2 つ</span>(3 と 7、1 と 9)。</p>
+        <p><b>消せる位置</b>: 次のどちらかに当てはまれば消せる。<br>
+        ・縦・横・斜めの一直線上にあり、間がすべて空マス(隣どうしも含む)。<br>
+        ・読み順(左から右、上から下)で続いていて、間がすべて空マス(行の右端と次の行の左端もつながる)。</p>
+        <p><b>消し方</b>: 1 つ目の数字をタップし、2 つ目をタップする。消せない組み合わせなら 2 つ目が選び直しになる。</p>
+        <p><b>Score</b>: 1 Pair の得点 = ${c.score.pairBase} 点 × 難しさ倍率 × Chain 倍率 × Speed 倍率。難しさ倍率は、横の隣どうし ×1.0、縦 ×${d.vertical}、行をまたぐ ×${d.wrap}、斜め ×${d.diagonal}。間の空マス 1 つごとに +${d.gapPerCell}(斜めは +${d.diagonalGapPerCell})。</p>
+        <p><b>Chain</b>: Pair を消すたびに倍率が +${c.chain.step}(最大 ×${c.chain.max})。Add を使うと ×1.0 に戻る。${c.chain.decayGraceMs / 1000} 秒消さないと、${c.chain.decayStepMs / 1000} 秒ごとに 1 段階ずつ減る(ゲージ)。</p>
+        <p><b>FEVER</b>: 倍率が ×${c.chain.max} に達すると ${c.fever.durationMs / 1000} 秒間 Score ×${c.fever.pointMult}。その間 Chain は減らず、Pair を消すたびに残り時間が ${c.fever.extendMs / 1000} 秒延びる(最大 ${c.fever.maxTotalMs / 1000} 秒)。終わると Chain は半分になる。</p>
+        <p><b>Speed</b>: 前の消去から ${c.speed.quickMs / 1000} 秒以内で QUICK(×${c.speed.quickMult})、${c.speed.fastMs / 1000} 秒以内で FAST(×${c.speed.fastMult})。</p>
+        <p><b>DIGIT CLEAR</b>: ある数字(たとえば 3)を Board から全部消し切ると、1 つの数字ごとに +${c.score.digitClear} × Chain 倍率。Add で戻ってきたらまた狙える。</p>
+        <p><b>Line</b>: 1 行まるごと空になるとその行が消え、${c.score.rowClear} 点 × (同時に消えた行数の 2 乗) × Chain 倍率が入る。</p>
+        <p><b>Add</b>: 残っている数字を末尾に書き足す。足したあとの Board が Add なしで全消しできる並びを優先して選ぶ(見つからないときは読み順)。回数は Stage ごとに決まっている。</p>
+        <p><b>Hint</b>(Stage ごとに ${h.perStage} 回。Chain 倍率で変化):<br>
         ・<span class="ex">HINT</span>(×1.0〜): 消せる Pair を 1 組示す。その Pair は得点 ${c.score.hintedPairRatio * 100}%、Chain は維持(増えない)。<br>
-        ・<span class="ex">FLASH</span>(×${h.flashFrom} 以上): 消せる Pair を全部 ${h.flashMs / 1000} 秒だけ光らせる。ゲージが半分になる。消した Pair は全て獲得。<br>
-        ・<span class="ex">SCOPE</span>(×${h.scopeFrom} 以上と FEVER 中): 相手のいるタイルを 1 枚光らせ、残り Pair 数を示す。相手は自分で探す。光ったタイルを含む Pair を消せば全て獲得(Chain は維持、Speed なし)。相手を外すと 1 回目 Chain −${h.scopeMissChain}、2 回目で Chain 半分。光ったタイルを使わず別の Pair を消しても Chain 半分。FEVER 中は使用回数の代わりに FEVER 時間 −${c.fever.hintTimeCostMs / 1000} 秒。<br>
-        <b>Dead End</b>: 消せる Pair が無くなってもゲームは明示しない。Dead End になってから Add を押せば Chain は半分保持される。Dead End なのに Hint を押すと、使用回数 1 と Chain 半分、−${c.score.hintWhenStuck} 点。<br>
-        <b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP になる。押すと Heart −1 だが、Stage 得点の半分は獲得できる。それに気づかず Hint を押すと Heart −1 で、Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。<br>
-        <b>Heart</b>: 3 つ。尽きると Run は終わり、World のはじめから再開。<br>
-        <b>ALL CLEAR</b>: Board を全部消すと +${c.score.stageClear} が入り、Chain と FEVER はそのまま次の Stage へ続く。Result の画面は World(5 Stage)の終わりに出る。Add を使わずに Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}、残した Hint 1 回ごとに +${c.score.hintSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。<br>
-        <b>CLASSIC モード</b>(Title のタブで切り替え。記録は NORMAL と別): 本家に近い遊び方。Chain 倍率・ゲージ・FEVER・Speed・Heart は無く、1 Pair ${c.score.pairBase} 点(横の隣どうし以外は +${c.classic.pathBonus})、Line ${c.score.rowClear} × 行数の 2 乗、DIGIT CLEAR ${c.classic.digitClear}。Add は ${c.classic.addsPerStage} 回、Hint は常に Pair を 1 組示す。Dead End はすぐ知らせ、Add も無ければ Stage 失敗(得点は半分残り、新しい Board でやり直し)。Perfect は Add も Hint も使わずに Clear。World で残した Add ${c.classic.investAddsPer} 回ごとに、次の World の各 Stage で Add +1(上限 +${c.classic.investAddsCap})。<br>
-        <b>Quest</b>: Stage ごとに 1 つお題が出る(「3 を最初に消し切れ」「Add なしで 7 Chain」「斜めで 2 回消せ」「Hint を使わずに Clear」)。達成で +${c.quest.bonus}。どのお題も、その Board で達成できることを確かめてから出している。<br>
-        <b>温存の投資</b>: World(5 Stage)で残した Add の回数が、次の World の開始 Chain(1 回ごとに +${c.invest.chainPerAdd}、上限 +${c.invest.chainCap})と Heart(${c.invest.addsPerHeart} 回ごとに +1)になる。<br>
-        <b>HARD モード</b>(NORMAL で World ${c.hard.unlockStage / c.worldSize} を制覇すると開放。記録は別枠): Add ${c.hard.addsPerStage} 回、Heart ${c.hard.rules.lives.max}、Hint ${c.hard.rules.hint.perStage} 回で、Chain は速く減る。見返りは得点 ×${c.hard.pointMult}(Rank の基準も ×${c.hard.pointMult})と Coin ×${c.hard.coinMult}。World の始めに GAMBIT を ${c.hard.gambitOffer} 枚から 1 枚選ぶ。見返りと代償が対になった札で、その World の ${c.worldSize} Stage に効く(例: BLAZE は FEVER が 2 倍長いが Hint 0、GLASS は Coin 2 倍だが Heart 1)。<br>
-        <b>Coin とショップ</b>: Stage を Clear すると、その Stage の得点がそのまま Coin として貯まる(Best Score とは別の累計。スロットでも使う)。Hint が尽きると HINT ボタンが BUY HINT(NORMAL ${fmt(c.shop.normal.hint)} / CLASSIC ${fmt(c.shop.classic.hint)} coin)、Add が尽きると ADD ボタンが BUY ADD(${fmt(c.shop.normal.add)} / ${fmt(c.shop.classic.add)} coin)に変わる。Heart はメニューから ${fmt(c.shop.normal.heart)} coin(NORMAL だけ)。買った Add・Hint は温存 Bonus と投資に数えない。買った Add を使えば Perfect は失う。<br>
-        <b>SLOT</b>(Title のタブ): Coin を賭けるパチスロ。賭けは好きな枚数(1 枚以上、残高まで)。1〜2 枚は中段のみ、3〜4 枚で横 3 本、5 枚以上で斜めも 5 本。役は 1 ライン・1 枚あたり、TEN TEN TEN で BIG BONUS(${c.slot.payout.big} 枚 + ${c.slot.bonus.big.games} 回の高確率)、★★★ で REG BONUS(${c.slot.payout.reg} 枚 + ${c.slot.bonus.reg.games} 回)、同じ数字 3 つで数字 × ${c.slot.payout.samePerDigit}、合計 10 で ${c.slot.payout.ten}、足して 10 の Pair + ★ で ${c.slot.payout.pairStar}。払い戻しは賭け枚数を掛け、揃ったうち一番高い 1 本だけ。役は START の時点で決まっていて、リールを止めると押した位置から ${c.slot.pullIn.default} コマ先まで引き込む(合計 10 と Pair + ★ はもっと広い)。範囲の外で押すとこぼす。BONUS の役はこぼしても次の回に持ち越す。予告ランプが光ったら BONUS の役かもしれない(たまにガセ)。<br>
-        <b>必殺技</b>(メニューから。Coin を大量に使う): SNIPE SHOT(NORMAL ${fmt(c.skill.normal.snipe)} / CLASSIC ${fmt(c.skill.classic.snipe)} coin)は数字を 2 つタップし、Pair なら位置に関係なく消す(得点と Chain は通常の消去と同じ)。LINE BREAK(${fmt(c.skill.normal.line)} / ${fmt(c.skill.classic.line)} coin)は 1 行を丸ごと消し、Line の得点 × Chain 倍率が入る。残った数字の組み合わせによっては Add が必要になる。Coin を使った Stage(ショップも必殺技も)は Stage ごとの最高得点に数えない。<br>
-        <b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。
+        ・<span class="ex">FLASH</span>(×${h.flashFrom} 以上): 消せる Pair を全部 ${h.flashMs / 1000} 秒光らせる。ゲージが半分になる。得点はそのまま獲得。<br>
+        ・<span class="ex">SCOPE</span>(×${h.scopeFrom} 以上と FEVER 中): 相手のいるタイルを 1 枚光らせ、残り Pair 数を示す。相手は自分で探す。そのタイルを含む Pair を消せば得点はそのまま獲得(Chain 維持、Speed なし)。外すと 1 回目 Chain −${h.scopeMissChain}、2 回目で半分。光ったタイルを使わず別の Pair を消しても半分。FEVER 中は回数の代わりに FEVER 時間 −${c.fever.hintTimeCostMs / 1000} 秒。</p>
+        <p><b>Dead End</b>: 消せる Pair が無くなっても、ゲーム側からは知らせない。Dead End になってから Add を押せば Chain は半分残る。気づかずに Hint を押すと、回数 1・Chain 半分・−${c.score.hintWhenStuck} 点。</p>
+        <p><b>GIVE UP</b>: Add が尽きると ADD ボタンが GIVE UP に変わる。押すと Heart −1 だが、Stage 得点の半分は残る。気づかずに Hint を押すと Heart −1 に加え、Stage 得点をすべて失い、さらに −${c.score.blindHintPenalty} 点。</p>
+        <p><b>Heart</b>: ${c.lives.start} つ。尽きると Run が終わり、その World のはじめから再開する。</p>
+        <p><b>ALL CLEAR</b>: Board を全部消すと +${c.score.stageClear} が入り、Chain と FEVER を持ち越して次の Stage へ進む。Result は World(${c.worldSize} Stage)の終わりに出る。Add なしで Clear すると Perfect Bonus +${c.score.perfect} と Heart 回復。残した Add 1 回ごとに +${c.score.addSaved}、Hint 1 回ごとに +${c.score.hintSaved}。Star は Add 0 回で ★★★、1 回で ★★、2 回以上で ★。</p>
+        <p><b>Quest</b>: Stage ごとに 1 つお題が出る(「3 を最初に消し切れ」「Chain を途切れさせずに ${c.quest.chainTarget} 回消せ」「斜めで ${c.quest.diagonalTarget} 回消せ」「Hint を使わずに Clear」)。達成で +${c.quest.bonus}。その Board で達成できる手順があるお題だけを出す。</p>
+        <p><b>温存の投資</b>: World で残した Add の回数が、次の World の開始 Chain(1 回ごとに +${c.invest.chainPerAdd}、上限 +${c.invest.chainCap})と Heart(${c.invest.addsPerHeart} 回ごとに +1)になる。</p>
+        <p><b>CLASSIC モード</b>(記録は NORMAL と別): 本家に近い遊び方。Chain 倍率・ゲージ・FEVER・Speed・Heart は無く、1 Pair ${c.score.pairBase} 点(横の隣どうし以外は +${c.classic.pathBonus})、Line ${c.score.rowClear} × 行数の 2 乗、DIGIT CLEAR ${c.classic.digitClear}。Add は ${c.classic.addsPerStage} 回、Hint は常に 1 組示す。Dead End はすぐ知らせ、Add も無ければ Stage 失敗(得点は半分残り、新しい Board でやり直し)。Perfect は Add も Hint も使わずに Clear。World で残した Add ${c.classic.investAddsPer} 回ごとに、次の World の各 Stage で Add +1(上限 +${c.classic.investAddsCap})。</p>
+        <p><b>HARD モード</b>(NORMAL で World ${c.hard.unlockStage / c.worldSize} を制覇すると開放。記録は別枠): Add ${c.hard.addsPerStage} 回・Heart ${c.hard.rules.lives.max}・Hint ${c.hard.rules.hint.perStage} 回で、Chain の減りが速い。見返りは得点 ×${c.hard.pointMult}(Rank の基準も ×${c.hard.pointMult})と Coin ×${c.hard.coinMult}。World の始めに GAMBIT を ${c.hard.gambitOffer} 枚から 1 枚選ぶ。見返りと代償が対になった札で、その World の ${c.worldSize} Stage に効く(例: BLAZE は FEVER が 2 倍長いが Hint 0、GLASS は Coin 2 倍だが Heart 1)。</p>
+        <p><b>Coin とショップ</b>: Stage Clear で得点がそのまま Coin として貯まる(Best Score とは別の累計)。Hint が尽きると BUY HINT(NORMAL・HARD ${fmt(c.shop.normal.hint)} / CLASSIC ${fmt(c.shop.classic.hint)} coin)、Add が尽きると BUY ADD(${fmt(c.shop.normal.add)} / ${fmt(c.shop.classic.add)} coin)に変わる。Heart はメニューから ${fmt(c.shop.normal.heart)} coin(NORMAL・HARD)。買った Add・Hint は温存 Bonus と投資に数えず、買った Add を使えば Perfect は失う。</p>
+        <p><b>必殺技</b>(メニューから): SNIPE SHOT(NORMAL・HARD ${fmt(c.skill.normal.snipe)} / CLASSIC ${fmt(c.skill.classic.snipe)} coin)は位置に関係なく Pair を 1 組消す。LINE BREAK(${fmt(c.skill.normal.line)} / ${fmt(c.skill.classic.line)} coin)は 1 行を丸ごと消し、Line の得点 × Chain 倍率が入る。ショップや必殺技で Coin を使った Stage は、Stage ごとの最高得点には数えない。</p>
+        <p><b>SLOT</b>(Title のタブ): Coin を賭けるパチスロ。1〜2 枚は中段のみ、3〜4 枚で横 3 本、5 枚以上で斜めも 5 本。1 ライン・1 枚あたり、TEN TEN TEN で BIG BONUS(${c.slot.payout.big} 枚 + ${c.slot.bonus.big.games} 回の高確率)、★★★ で REG BONUS(${c.slot.payout.reg} 枚 + ${c.slot.bonus.reg.games} 回)、同じ数字 3 つで数字 × ${c.slot.payout.samePerDigit}、合計 10 で ${c.slot.payout.ten}、足して 10 の Pair + ★ で ${c.slot.payout.pairStar}。払い戻しは揃ったうち一番高い 1 本のみ。役は START の時点で決まっていて、止めた位置から ${c.slot.pullIn.default} コマ先まで引き込む(合計 10 と Pair + ★ は広め)。BONUS の役はこぼしても持ち越す。</p>
+        <p><b>Rank</b>: Stage 得点が基準点(マス数 × ${c.rank.perCell})の ${c.rank.S} 倍以上で S、${c.rank.A} 倍で A、${c.rank.B} 倍で B、それ未満は C。</p>
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
     card.querySelector('#ov-back').onclick = showTitle;
@@ -888,7 +897,7 @@ async function boot() {
         <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
         <div class="ja">${vs.active ? `VS · 合言葉 ${vs.code}` : `MODE: ${game.mode.toUpperCase()}${game.gambit ? ` · GAMBIT ${game.gambit.name}` : ''}(Title で切り替え) · Coin ${fmt(game.coins)}`}</div>
         ${inPlay && !vs.active ? game.skillItems().map((e) => `<button class="btn btn-ghost" data-skill="${e.skill}" ${e.can ? '' : 'disabled'}>${e.skill === 'line' ? 'LINE BREAK' : 'SNIPE SHOT'}<small>　${fmt(e.price)} coin · ${e.skill === 'line' ? '1 行を丸ごと消す' : '位置に関係なく Pair を 1 組消す'}</small></button>`).join('') : ''}
-        ${inPlay && !vs.active && game.shopPrices.heart ? `<button class="btn btn-ghost" id="ov-buy-heart" ${game.shopItems().find((e) => e.item === 'heart')?.can ? '' : 'disabled'}>BUY HEART<small>　${fmt(game.shopPrices.heart)} coin · Heart ${game.run.lives}/${CONFIG.lives.max}</small></button>` : ''}
+        ${inPlay && !vs.active && game.shopPrices.heart ? `<button class="btn btn-ghost" id="ov-buy-heart" ${game.shopItems().find((e) => e.item === 'heart')?.can ? '' : 'disabled'}>BUY HEART<small>　${fmt(game.shopPrices.heart)} coin · Heart ${game.run.lives}/${game.cfg.lives.max}</small></button>` : ''}
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
         ${inPlay ? (vs.active ? '<button class="btn btn-danger" id="ov-giveup">FINISH(得点を確定して終了)</button>' : `<button class="btn btn-danger" id="ov-giveup">GIVE UP(${game.classic ? '得点は半分残る' : 'Heart −1 · 得点は半分残る'})</button>`) : ''}
@@ -1005,7 +1014,12 @@ async function boot() {
     if (!vs.active || vs.playing) return;
     const connected = !!(vs.link && vs.link.open);
     const totalWorlds = Math.ceil(stages.length / CONFIG.worldSize);
-    const worldChips = Array.from({ length: totalWorlds }, (_, w) => `<button class="btn btn-ghost chip ${vs.world === w ? 'on' : ''}" data-world="${w}">${stages[w * CONFIG.worldSize].extra ? 'EX' : 'W'}${w + 1}<small>${stages[w * CONFIG.worldSize].cellsCount}〜 cells</small></button>`).join('');
+    const extraFrom = game.worldOf(Math.max(0, stages.findIndex((s) => s.extra)));
+    const worldChips = Array.from({ length: totalWorlds }, (_, w) => {
+      const def = stages[w * CONFIG.worldSize];
+      const label = def.extra ? `EX${w + 1 - extraFrom}` : `W${w + 1}`;
+      return `<button class="btn btn-ghost chip ${vs.world === w ? 'on' : ''}" data-world="${w}">${label}<small>${def.cellsCount}〜 cells</small></button>`;
+    }).join('');
     const timeChips = CONFIG.vs.timeLimits.map((ms) => `<button class="btn btn-ghost chip ${vs.timeLimitMs === ms ? 'on' : ''}" data-time="${ms}">${mmss(ms)}</button>`).join('');
     const card = ui.showOverlay(`
       <div class="eyebrow">vs · room</div>
@@ -1158,14 +1172,16 @@ async function boot() {
     card.querySelector('#ov-title').onclick = () => { leaveVs(); showTitle(); };
   }
 
-  function showVsResult() {
+  function showVsResult(replay = false) {
     vs.playing = false;
     const me = vs.myFinal?.score ?? 0;
     const rv = vs.rivalFinal?.score ?? null;
     const gone = rv === null;
     const win = gone ? null : me > rv ? 'win' : me < rv ? 'lose' : 'draw';
     const title = gone ? 'No Contest' : win === 'win' ? 'YOU WIN' : win === 'lose' ? 'YOU LOSE' : 'DRAW';
-    if (win === 'win') { sound.perfect(); fx.fireworks(8); } else if (win === 'lose') sound.fail(); else sound.stageClear();
+    if (!replay) {
+      if (win === 'win') { sound.perfect(); fx.fireworks(8); } else if (win === 'lose') sound.fail(); else sound.stageClear();
+    }
     const reasonText = { time: '時間切れ', clear: 'ALL CLEAR', giveUp: 'FINISH', stuck: '詰み' };
     const card = ui.showOverlay(`
       <div class="eyebrow">vs · stage ${pad2(vs.setup.stage)} · ${mmss(vs.setup.timeLimitMs)}</div>
@@ -1187,7 +1203,7 @@ async function boot() {
         <button class="btn btn-ghost" id="ov-title">Title へ(退出)</button>
       </div>`);
     card.querySelector('#ov-rematch')?.addEventListener('click', () => { vs.playing = false; showVsLobby(); });
-    card.querySelector('#ov-review').onclick = () => showReview(showVsResult);
+    card.querySelector('#ov-review').onclick = () => showReview(() => showVsResult(true));
     card.querySelector('#ov-title').onclick = () => { leaveVs(); showTitle(); };
   }
 

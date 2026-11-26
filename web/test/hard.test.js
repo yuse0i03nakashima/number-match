@@ -49,8 +49,19 @@ test('HARD の Clear: Coin は Stage 得点 × coinMult', () => {
   const clear = out.find((e) => e.type === 'stageClear');
   assert.ok(clear, 'Board を全部消すと Clear');
   assert.equal(clear.hard, true);
+  assert.equal(clear.coinMult, CONFIG.hard.coinMult);
   assert.equal(clear.coinsGained, Math.floor(clear.stageScore * CONFIG.hard.coinMult));
   assert.equal(g.coins, clear.coinsGained);
+});
+
+test('HARD: GLASS を選んだ Run のあとに newRun しても Heart は既定値(2)で始まる', () => {
+  const g = hardGame();
+  g.newRun(0);
+  g.run.gambitOffer = ['glass', 'blaze', 'rush'];
+  g.chooseGambit('glass', 1_000_000);
+  assert.equal(g.run.lives, 1);
+  g.newRun(0);
+  assert.equal(g.run.lives, CONFIG.hard.rules.lives.start);
 });
 
 test('GAMBIT: BLAZE は FEVER 2 倍・Hint 0。選ぶと今の Stage に効き、2 枚目は選べず、次の World で外れる', () => {

@@ -22,7 +22,7 @@
 //
 // 時間: tap と tick は現在時刻(ミリ秒)を受け取る。Chain は時間で減り(ゲージ)、FEVER と FLASH は時間で終わる。
 //
-// モード: NORMAL と CLASSIC(cfg.classic)。記録(progress)と進行中の Run はモードごとに別の枠(slots)に持つ。
+// モード: NORMAL・CLASSIC(cfg.classic)・HARD(cfg.hard)。記録(progress)と進行中の Run はモードごとに別の枠(slots)に持つ。
 //   CLASSIC は本家に近い遊び方: 倍率 ×1 固定、ゲージ・FEVER・Speed・Heart なし、Dead End はすぐ知らせる、
 //   Add は 5 回、Hint は 1 段階だけ。Perfect は Add も Hint も使わないこと。
 
@@ -291,6 +291,8 @@ export class Game {
 
   // ---------- Run と Stage ----------
   newRun(stageIndex = 0) {
+    // 前の Run の GAMBIT(GLASS など)が cfg.lives.start に残らないよう、先に run を外してから初期ライフを読む
+    this.run = null;
     this.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null, maxChain: 0, reviews: [], savedAdds: 0, investChain: 0, investAdds: 0, bonusAdds: 0 };
     this.progress.runs += 1;
     return this.startStage();
@@ -336,7 +338,8 @@ export class Game {
       status: 'play',        // play | clear | failed | runOver | complete
       history: [],           // 感想戦用の手の記録(review.js が読む)
       maxChain: chain,       // この Stage の最高 Chain
-      quest: makeQuest(this.cfg, def.stage, variant.cells, { exclude: this.classic ? ['chain', 'noHint'] : this.cfg.hint.perStage === 0 ? ['noHint'] : [] }),   // Hint が 0 の札のときは「Hint を使わずに」を出さない   // この Stage のお題(CLASSIC に Chain のお題は無く、Hint なしは Perfect と重なるので出さない)
+      // この Stage のお題(CLASSIC は Chain と Hint なしを除外、Hint 0 の札では Hint なしを除外)
+      quest: makeQuest(this.cfg, def.stage, variant.cells, { exclude: this.classic ? ['chain', 'noHint'] : this.cfg.hint.perStage === 0 ? ['noHint'] : [] }),
       firstDigitCleared: null,
     };
     this.save();
@@ -710,12 +713,13 @@ export class Game {
     if (!this.progress.stageBest) this.progress.stageBest = {};
     if (stageBestUpdated) this.progress.stageBest[def.stage] = st.stageScore;
     // Coin: Stage の得点がそのまま貯まる(HARD は × coinMult)
-    const coinsGained = Math.floor(st.stageScore * (this.hard ? cfg.hard.coinMult : 1));
+    const coinMult = this.hard ? cfg.hard.coinMult : 1;
+    const coinsGained = Math.floor(st.stageScore * coinMult);
     this.coins += coinsGained;
     this.save();
     return [{
       type: 'stageClear', stage: def.stage, stars, rank, perfect, clearBonus, perfectBonus, savedBonus, hintBonus, lifeGain,
-      stageBest: stageBestUpdated ? st.stageScore : prevBest, stageBestUpdated, prevBest, coinsGained, coins: this.coins, coinUsed: !!st.coinUsed,
+      stageBest: stageBestUpdated ? st.stageScore : prevBest, stageBestUpdated, prevBest, coinsGained, coinMult, coins: this.coins, coinUsed: !!st.coinUsed,
       stageScore: st.stageScore, playScore: st.stageScore - bonusTotal, score: this.run.score,
       addsUsed: st.addsUsed, addsLeft: st.addsLeft, hintsLeft: st.hintsLeft, addsSaved, hintsSaved,
       isLast: this.run.stageIndex + 1 >= this.stages.length,

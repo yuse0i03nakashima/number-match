@@ -1,7 +1,7 @@
 // ルール(generator/src/NumberMatch/Rules.hs の移植)。
 // 正本は Haskell 側。関数名・意味をそろえ、web/test/rules.test.js で一致を確かめる。
 //
-// ボード面 board は数字の配列(読み順)。0 が空マス、1〜9 が数字。
+// 盤面 board は数字の配列(読み順)。0 が空マス、1〜9 が数字。
 // Haskell の Cell(Empty | Num n)を、JSON と同じ「0 か 1〜9」で表している。
 
 export const WIDTH = 9;

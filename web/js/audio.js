@@ -1,15 +1,15 @@
 // 効果音(WebAudio で合成。音源ファイルなし)。
-// 方針: 耳に刺さる矩形波は使わず、三角波・正弦波に短い減衰をつけた「楽器っぽい」音にする。
-// 消したときの音はペンタトニック(ド レ ミ ソ ラ)をチェーン数で上っていくので、連鎖が旋律になる。
+// 方針: 耳に刺さる矩形波は基本使わず、三角波・正弦波に短い減衰をつけた「楽器っぽい」音にする。
+// 消したときの音は E メジャーの長音階をチェーン数で上っていくので、連鎖が旋律になる。
 
-// 長音階(ドレミファソラシド)。Chain が 1 つ上がるごとに 1 音上がり、8 連鎖で 1 オクターブ上のドに戻る。
-const MAJOR = [0, 2, 4, 5, 7, 9, 11];        // 半音の並び(C メジャー)
-const C4 = 329.6276;                          // 音階の基準。BGM と同じ E メジャーに合わせる(E4。A4 = 440 Hz の平均律)
+// 長音階(ドレミファソラシド)。Chain が 1 つ上がるごとに 1 音上がり、8 連鎖で 1 オクターブ上に戻る。
+const MAJOR = [0, 2, 4, 5, 7, 9, 11];        // 長音階の半音間隔
+const E4 = 329.6276;                         // 音階の基準。BGM と同じ E メジャーに合わせる(E4。A4 = 440 Hz の平均律)
 
 function noteFreq(index) {
   const octave = Math.floor(index / MAJOR.length);
   const semi = MAJOR[((index % MAJOR.length) + MAJOR.length) % MAJOR.length] + 12 * octave;
-  return C4 * Math.pow(2, semi / 12);
+  return E4 * Math.pow(2, semi / 12);
 }
 
 export class Sound {

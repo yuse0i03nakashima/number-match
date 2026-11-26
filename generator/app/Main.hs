@@ -37,7 +37,7 @@ findStage spec seed
   where
     b     = randomBoard seed (specCells spec)
     moves = length (validPairs b)
-    -- 序ボードは初手の選択肢を多めに(やさしく)、後半は絞る。
+    -- 序盤は初手の選択肢を多めに(やさしく)、後半は絞る。
     -- EXTRA は初手の選択肢が少ないボード(90 マスの乱数ボードは 50〜87 組、中央は 65 前後。下位の 3 分の 1 ほどを採る)。
     enoughMoves
       | specExtra spec      = moves <= 56
